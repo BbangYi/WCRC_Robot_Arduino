@@ -1,4 +1,6 @@
-# WCRC Logistics Robot 2 - Motor Mission
+# wcrc-logistics-robot-motor
+
+WCRC Logistics Robot 2 - Motor Mission.
 
 `Motor.ino` is an Arduino mission sketch for the MobileManipulator Blackberry platform.
 This version targets the WCRC logistics robot 2 sorting mission and keeps the full mission flow in one sketch.

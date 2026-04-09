@@ -1,5 +1,7 @@
 # Project Rules
 
+Repository name: `wcrc-logistics-robot-motor`
+
 ## Repository Scope
 
 - Track the Arduino sketch folder `Motor/` as the repository root.
