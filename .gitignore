@@ -1,0 +1,16 @@
+.DS_Store
+.vscode/
+.idea/
+
+# Arduino build output
+build/
+*.elf
+*.hex
+*.bin
+*.eep
+*.lst
+*.map
+
+# Temporary / generated files
+*.tmp
+*.log
