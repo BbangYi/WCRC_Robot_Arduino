@@ -21,6 +21,7 @@ This version targets the WCRC logistics robot 2 sorting mission and keeps the fu
 | `Motor.ino` | Main 6-step autonomous mission sequence |
 | `MissionConfig.h` | Single configuration entry point for mission order, PSD thresholds, waits, timeouts, and distances |
 | `PROJECT_RULES.md` | Repo, configuration, storage-rack, and test rules |
+| `ops/` | Git-tracked operations records for field tests, EEPROM poses, safety checks, and design decisions |
 | `Mobilebase.cpp` / `Mobilebase.h` | Mecanum mobile-base control, velocity mode, position mode, PSD-assisted movement |
 | `Manipulator.h` | EEPROM-based manipulator pose execution |
 | `PSD.cpp` / `PSD.h` | Front and side PSD sensor reads |
@@ -39,6 +40,15 @@ This version targets the WCRC logistics robot 2 sorting mission and keeps the fu
 - Keep low-level mobile-base motor defaults in `Mobilebase.h`.
 - Use `CFG.speed` for mission-level mobile-base speeds.
 - Treat `MOBILEBASE_DEFAULT_DRIVING_SPEED` and `MOBILEBASE_DEFAULT_DRIVING_MM_PER_S` as fallback defaults for the low-level mobile-base helper.
+
+## Operations Records
+
+- Keep the operational source of truth in `ops/`.
+- Use `ops/events.jsonl` for code changes, field tests, safety checks, and rollback notes.
+- Use `ops/eeprom-poses.json` for pose ID 1-14 verification status and motor values.
+- Use `ops/decisions.md` for design decisions that should outlive a single test run.
+- Use `ops/safety-checklist.md` before upload and field testing.
+- The Public&Private private console may read these files as a dashboard, but Git remains the record authority.
 
 ## Current Field-Tuning Notes
 

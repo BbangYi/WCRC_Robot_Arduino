@@ -1,0 +1,138 @@
+{
+  "schemaVersion": 1,
+  "projectId": "wcrc-robot-arduino",
+  "updatedAt": "2026-04-30T00:00:00+09:00",
+  "notes": [
+    "모터 값은 EEPROM에서 읽거나 manageManipulatorPose에서 확인하기 전까지 null로 둔다.",
+    "verificationStatus 값: unverified, no-load-pass, block-test-pass, mission-pass, do-not-use.",
+    "자세 ID 7~14는 미션 수행존 1~8번 칸에 대응한다."
+  ],
+  "poses": [
+    {
+      "poseId": 1,
+      "name": "초기 / 미션 지시존 카메라 자세",
+      "role": "initial",
+      "motors": { "m1": null, "m2": null, "m3": null, "m4": null },
+      "verificationStatus": "unverified",
+      "lastTestAt": null,
+      "notes": "부팅 직후와 미션 지시존 Pixy 스캔에 사용한다. 카메라 시야가 너무 높으면 이 자세부터 낮춘다."
+    },
+    {
+      "poseId": 2,
+      "name": "보관 / 안전 이동 자세",
+      "role": "storage",
+      "motors": { "m1": null, "m2": null, "m3": null, "m4": null },
+      "verificationStatus": "unverified",
+      "lastTestAt": null,
+      "notes": "안전 이동과 미션 수행존 방향 회전 전에 사용한다."
+    },
+    {
+      "poseId": 3,
+      "name": "상단 집기 준비",
+      "role": "pre-grip-upper",
+      "motors": { "m1": null, "m2": null, "m3": null, "m4": null },
+      "verificationStatus": "unverified",
+      "lastTestAt": null,
+      "notes": "블록 테스트 전에 무부하 매니퓰레이터 테스트가 필요하다."
+    },
+    {
+      "poseId": 4,
+      "name": "상단 집기",
+      "role": "grip-upper",
+      "motors": { "m1": null, "m2": null, "m3": null, "m4": null },
+      "verificationStatus": "unverified",
+      "lastTestAt": null,
+      "notes": "공식 주행 전에 그리퍼와 적재함 간섭을 확인한다."
+    },
+    {
+      "poseId": 5,
+      "name": "하단 집기 준비",
+      "role": "pre-grip-lower",
+      "motors": { "m1": null, "m2": null, "m3": null, "m4": null },
+      "verificationStatus": "unverified",
+      "lastTestAt": null,
+      "notes": "공식 주행 전에 바닥과 적재함 간섭을 확인한다."
+    },
+    {
+      "poseId": 6,
+      "name": "하단 집기",
+      "role": "grip-lower",
+      "motors": { "m1": null, "m2": null, "m3": null, "m4": null },
+      "verificationStatus": "unverified",
+      "lastTestAt": null,
+      "notes": "집기 자세 중 충돌 위험이 가장 크므로 블록 없이 먼저 테스트한다."
+    },
+    {
+      "poseId": 7,
+      "name": "미션 수행존 1번 칸 배치",
+      "role": "mission-zone-slot-1",
+      "motors": { "m1": null, "m2": null, "m3": null, "m4": null },
+      "verificationStatus": "unverified",
+      "lastTestAt": null,
+      "notes": "위쪽 줄 1번 칸."
+    },
+    {
+      "poseId": 8,
+      "name": "미션 수행존 2번 칸 배치",
+      "role": "mission-zone-slot-2",
+      "motors": { "m1": null, "m2": null, "m3": null, "m4": null },
+      "verificationStatus": "unverified",
+      "lastTestAt": null,
+      "notes": "위쪽 줄 2번 칸."
+    },
+    {
+      "poseId": 9,
+      "name": "미션 수행존 3번 칸 배치",
+      "role": "mission-zone-slot-3",
+      "motors": { "m1": null, "m2": null, "m3": null, "m4": null },
+      "verificationStatus": "unverified",
+      "lastTestAt": null,
+      "notes": "위쪽 줄 3번 칸."
+    },
+    {
+      "poseId": 10,
+      "name": "미션 수행존 4번 칸 배치",
+      "role": "mission-zone-slot-4",
+      "motors": { "m1": null, "m2": null, "m3": null, "m4": null },
+      "verificationStatus": "unverified",
+      "lastTestAt": null,
+      "notes": "위쪽 줄 4번 칸."
+    },
+    {
+      "poseId": 11,
+      "name": "미션 수행존 5번 칸 배치",
+      "role": "mission-zone-slot-5",
+      "motors": { "m1": null, "m2": null, "m3": null, "m4": null },
+      "verificationStatus": "unverified",
+      "lastTestAt": null,
+      "notes": "아래쪽 줄 5번 칸."
+    },
+    {
+      "poseId": 12,
+      "name": "미션 수행존 6번 칸 배치",
+      "role": "mission-zone-slot-6",
+      "motors": { "m1": null, "m2": null, "m3": null, "m4": null },
+      "verificationStatus": "unverified",
+      "lastTestAt": null,
+      "notes": "아래쪽 줄 6번 칸."
+    },
+    {
+      "poseId": 13,
+      "name": "미션 수행존 7번 칸 배치",
+      "role": "mission-zone-slot-7",
+      "motors": { "m1": null, "m2": null, "m3": null, "m4": null },
+      "verificationStatus": "unverified",
+      "lastTestAt": null,
+      "notes": "아래쪽 줄 7번 칸."
+    },
+    {
+      "poseId": 14,
+      "name": "미션 수행존 8번 칸 배치",
+      "role": "mission-zone-slot-8",
+      "motors": { "m1": null, "m2": null, "m3": null, "m4": null },
+      "verificationStatus": "unverified",
+      "lastTestAt": null,
+      "notes": "아래쪽 줄 8번 칸."
+    }
+  ]
+}

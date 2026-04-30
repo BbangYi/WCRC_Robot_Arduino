@@ -7,6 +7,7 @@ Repository name: `wcrc-logistics-robot-motor`
 - Track the Arduino sketch folder `Motor/` as the repository root.
 - Do not commit `.DS_Store`, editor folders, logs, Arduino build outputs, or generated binaries.
 - Keep course reference code outside this repo unless a file is intentionally copied into `Motor/`.
+- Keep field-operation records in `ops/` so Git history can explain code, tuning, EEPROM, and test decisions together.
 
 ## Configuration
 
@@ -42,6 +43,9 @@ camera side
 ## Change Discipline
 
 - Prefer small commits that keep robot behavior reviewable.
+- Record behavior-affecting changes in `ops/events.jsonl` with the Git branch or commit.
+- Record EEPROM pose verification in `ops/eeprom-poses.json`.
+- Record durable design choices in `ops/decisions.md`.
 - Document changed field-tuning values in `README.md`.
 - After any drivetrain change, test once with wheels lifted before field testing.
 - After any manipulator/pose change, verify EEPROM pose existence before a full autonomous run.
