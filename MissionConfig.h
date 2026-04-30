@@ -99,8 +99,17 @@ public:
 
   struct CameraScanConfig
   {
-    int16_t centerXMin = 126;
-    int16_t centerXMax = 189;
+    // Pixy2 CCC signature는 PixyMon에서 학습된 1~7번 안에서만 동작한다.
+    // 아래 값은 새 색상 세트로 교체하는 값이 아니라, 이미 학습된 signature 중
+    // 어느 번호를 받을지 고르는 필터다. bit0=sig1, bit1=sig2 ...
+    uint8_t maxSignature = 7;
+    uint8_t missionInstructionAllowedSignatureMap = 0b00111111;
+    uint8_t storageAllowedSignatureMap = 0b00111111;
+
+    // 스토리지에서 목표 블록을 중앙에 맞추고 상/하층을 판별하는 기준.
+    int16_t storageXSetpoint = 157;
+    int16_t storageXTolerance = 6;
+    int16_t storageYUpperLowerSplit = 103;
   };
 
   struct TimeoutConfig
@@ -130,7 +139,12 @@ public:
   struct FinishReturnConfig
   {
     int16_t boundaryAdc = 220; // SL PSD: 이 값 이상이면 장애물 있음
-    unsigned long finishExtraMs = 3000;
+    int16_t trackSl = 317;     // 후진 중 왼쪽 장애물을 따라갈 때 목표 SL 값
+    int16_t trackTolerance = 20;
+    int32_t correctionMaxSpeed = 40;
+    int32_t openSideLeftBiasSpeed = 25; // SL이 장애물을 놓쳤을 때 왼쪽으로 살짝 붙는 보정
+    int32_t wheelMaxSpeed = 200;        // 후진 보정 중 특정 바퀴만 과하게 도는 것을 제한
+    unsigned long finishExtraMs = 3000; // 현장 테스트로 맞춘 값. 기록 없이 줄이지 않는다.
   };
 
   PoseConfig pose;

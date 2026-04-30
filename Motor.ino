@@ -33,7 +33,6 @@
 #include "Manipulator.h" // 전역 dxl 사용 (dxl 파라미터 불필요)
 #include "PSD.h"         // PSD 센서 읽기 함수
 #include "Pixy.h"
-#include "Camera.h" // PIXY2_X_SETPOINT, PIXY2_Y_SETPOINT, PIXY2_X_TOLERANCE
 #include "Gripper.h"
 #include "RGBLED.h"
 #include "Pins.h"
@@ -68,6 +67,185 @@ uint8_t targetSigs[MissionConfig::MAX_MISSION_BLOCKS];    // 순서별 시그니
 uint8_t goalPositions[MissionConfig::MAX_MISSION_BLOCKS]; // 순서별 목표 칸 번호 (1~8)
 uint8_t totalBlocks = 0;                                  // 인식된 총 블록 수
 
+int32_t clampInt32(int32_t value, int32_t minValue, int32_t maxValue)
+{
+  if (value < minValue)
+    return minValue;
+  if (value > maxValue)
+    return maxValue;
+  return value;
+}
+
+bool readLargestTargetBlock(uint8_t targetSigmap, int16_t *blockX, int16_t *blockY)
+{
+  pixy.ccc.getBlocks(true, targetSigmap);
+  if (pixy.ccc.numBlocks == 0)
+    return false;
+
+  uint8_t bestIndex = 0;
+  uint32_t bestArea = 0;
+  for (uint8_t i = 0; i < pixy.ccc.numBlocks; i++)
+  {
+    uint32_t area = (uint32_t)pixy.ccc.blocks[i].m_width * (uint32_t)pixy.ccc.blocks[i].m_height;
+    if (area > bestArea)
+    {
+      bestArea = area;
+      bestIndex = i;
+    }
+  }
+
+  *blockX = pixy.ccc.blocks[bestIndex].m_x;
+  *blockY = pixy.ccc.blocks[bestIndex].m_y;
+  return true;
+}
+
+uint8_t getMissionInstructionSignatureMap()
+{
+  uint8_t signatureMap = CFG.cameraScan.missionInstructionAllowedSignatureMap &
+                         CFG.mission.blockSignatureMap;
+  if (signatureMap == 0)
+    signatureMap = CFG.mission.blockSignatureMap;
+  return signatureMap;
+}
+
+uint8_t getStorageTargetSignatureMap(uint8_t targetSig)
+{
+  if (targetSig < 1 || targetSig > CFG.cameraScan.maxSignature)
+    return 0;
+  return (1 << (targetSig - 1)) & CFG.cameraScan.storageAllowedSignatureMap;
+}
+
+void printPixyRecognitionMode(const __FlashStringHelper *label, uint8_t signatureMap)
+{
+  DEBUG_SERIAL.print(label);
+  DEBUG_SERIAL.print(F(" Pixy signature filter=0b"));
+  for (int bit = 7; bit >= 0; bit--)
+  {
+    DEBUG_SERIAL.print((signatureMap >> bit) & 0x01);
+  }
+  DEBUG_SERIAL.println();
+}
+
+void driveBackwardWithLeftBoundaryCorrection(int16_t slVal)
+{
+  int32_t correctionSpeed = 0;
+
+  if (slVal <= CFG.finishReturn.boundaryAdc)
+  {
+    correctionSpeed = -CFG.finishReturn.openSideLeftBiasSpeed;
+  }
+  else
+  {
+    int16_t sideError = slVal - CFG.finishReturn.trackSl;
+    if (abs(sideError) > CFG.finishReturn.trackTolerance)
+    {
+      correctionSpeed = (int32_t)sideError * CFG.finishReturn.correctionMaxSpeed /
+                        (CFG.finishReturn.trackTolerance * 4);
+      correctionSpeed = clampInt32(correctionSpeed,
+                                   -CFG.finishReturn.correctionMaxSpeed,
+                                   CFG.finishReturn.correctionMaxSpeed);
+    }
+  }
+
+  int32_t baseSpeed = CFG.speed.returnSpeed;
+  int32_t flSpeed = clampInt32(-baseSpeed + correctionSpeed,
+                               -CFG.finishReturn.wheelMaxSpeed,
+                               CFG.finishReturn.wheelMaxSpeed);
+  int32_t frSpeed = clampInt32(-baseSpeed - correctionSpeed,
+                               -CFG.finishReturn.wheelMaxSpeed,
+                               CFG.finishReturn.wheelMaxSpeed);
+  int32_t blSpeed = clampInt32(-baseSpeed - correctionSpeed,
+                               -CFG.finishReturn.wheelMaxSpeed,
+                               CFG.finishReturn.wheelMaxSpeed);
+  int32_t brSpeed = clampInt32(-baseSpeed + correctionSpeed,
+                               -CFG.finishReturn.wheelMaxSpeed,
+                               CFG.finishReturn.wheelMaxSpeed);
+
+  SetMobileGoalVelocityForSyncWrite(dxl, flSpeed, frSpeed, blSpeed, brSpeed);
+}
+
+void waitForSW1Continue(const __FlashStringHelper *message)
+{
+  SetMobileGoalVelocityForSyncWrite(dxl, 0, 0, 0, 0);
+  setRGBLEDBlue();
+  unsigned long pauseStartTime = millis();
+
+  DEBUG_SERIAL.println(F(""));
+  DEBUG_SERIAL.println(message);
+  DEBUG_SERIAL.println(F("  SW1 버튼을 누르면 계속 진행합니다."));
+
+  while (digitalRead(SW1_PIN) == HIGH)
+  {
+    delay(10);
+  }
+  delay(CFG.wait.buttonDebounceMs);
+  while (digitalRead(SW1_PIN) == LOW)
+  {
+    delay(10);
+  }
+  delay(CFG.wait.buttonDebounceMs);
+  setRGBLEDOff();
+
+  if (missionStartTime > 0)
+  {
+    missionStartTime += millis() - pauseStartTime;
+  }
+}
+
+void haltWithRedBlink(const __FlashStringHelper *title, const __FlashStringHelper *detail)
+{
+  SetMobileGoalVelocityForSyncWrite(dxl, 0, 0, 0, 0);
+  pixy.setLamp(0, 0);
+
+  DEBUG_SERIAL.println(F(""));
+  DEBUG_SERIAL.println(title);
+  DEBUG_SERIAL.println(detail);
+  DEBUG_SERIAL.println(F("  안전을 위해 코드를 멈춥니다. 원인을 수정한 뒤 전원을 다시 켜세요."));
+
+  while (1)
+  {
+    setRGBLEDRed();
+    delay(500);
+    setRGBLEDOff();
+    delay(500);
+  }
+}
+
+void haltForMissingManipulatorPose(uint8_t poseId, const __FlashStringHelper *context)
+{
+  DEBUG_SERIAL.print(F("  [오류] EEPROM 자세 "));
+  DEBUG_SERIAL.print(poseId);
+  DEBUG_SERIAL.println(F("번 데이터가 없습니다."));
+  DEBUG_SERIAL.println(context);
+  haltWithRedBlink(F("  매니퓰레이터 자세 누락"), F("  manageManipulatorPose에서 필요한 자세를 저장한 뒤 다시 실행하세요."));
+}
+
+ManipulatorPose runRequiredManipulatorPose(uint8_t poseId,
+                                           int32_t operatingTimeMillis,
+                                           float motor1Angle,
+                                           const __FlashStringHelper *context)
+{
+  ManipulatorPose pose = RunManipulatorPoseWithPoseDataInEEPROM(poseId,
+                                                                operatingTimeMillis,
+                                                                motor1Angle);
+  if (!pose.isTherePoseData)
+  {
+    haltForMissingManipulatorPose(poseId, context);
+  }
+  return pose;
+}
+
+uint8_t missionZonePoseIdForGoal(uint8_t goalPos)
+{
+  if (goalPos < 1 || goalPos > 8)
+  {
+    haltWithRedBlink(F("  [설정 오류] 미션 수행존 번호가 1~8 범위를 벗어났습니다."),
+                     F("  MissionConfig.h의 goalPositions 값을 확인하세요."));
+  }
+
+  return CFG.pose.missionZoneStartId + goalPos;
+}
+
 // ============================================================
 //  1단계: 초기화 & 버튼 대기
 // ============================================================
@@ -100,22 +278,10 @@ void step1_init()
 
   // 그리퍼 열기, INITIAL 자세
   OpenGripper(pixy);
-  ManipulatorPose testPose = RunManipulatorPoseWithPoseDataInEEPROM(INITIAL_AND_MISSION_INSTRUCTION, 2000);
+  runRequiredManipulatorPose(INITIAL_AND_MISSION_INSTRUCTION, 2000,
+                             -360.0,
+                             F("  1번 자세는 초기 자세와 미션지시존 카메라 자세로 사용됩니다."));
   SetMobileGoalVelocityForSyncWrite(dxl, 0, 0, 0, 0);
-
-  // EEPROM 자세 데이터 검증
-  if (!testPose.isTherePoseData)
-  {
-    DEBUG_SERIAL.println(F("  [오류] EEPROM 자세 1번 데이터 없음!"));
-    DEBUG_SERIAL.println(F("  manageManipulatorPose로 자세를 먼저 저장하세요."));
-    while (1)
-    {
-      setRGBLEDRed();
-      delay(500);
-      setRGBLEDOff();
-      delay(500);
-    }
-  }
   delay(2500);
 
   // 스캔 결과 초기화
@@ -259,6 +425,8 @@ void step2_approach()
   DEBUG_SERIAL.print(F("  미션지시존 도착 SL="));
   DEBUG_SERIAL.println(slVal);
   delay(CFG.wait.driveSettleMs);
+
+  waitForSW1Continue(F("  [일시정지] 미션지시존에 정지했습니다. 블록 스캔 전 위치를 확인하세요."));
 }
 
 // ============================================================
@@ -271,9 +439,15 @@ void step3_scan()
   DEBUG_SERIAL.println(F(" [3단계] 블록 스캔"));
   DEBUG_SERIAL.println(F("========================================"));
 
+  totalBlocks = 0;
+  memset(targetSigs, 0, sizeof(targetSigs));
+  memset(goalPositions, 0, sizeof(goalPositions));
+
   // INITIAL 자세에서 미션지시존을 카메라로 촬영
   // (step2 후 이미 INITIAL 자세이므로 확인용)
-  RunManipulatorPoseWithPoseDataInEEPROM(INITIAL_AND_MISSION_INSTRUCTION, 1000);
+  runRequiredManipulatorPose(INITIAL_AND_MISSION_INSTRUCTION, 1000,
+                             -360.0,
+                             F("  미션지시존 스캔 전에 1번 초기 자세가 필요합니다."));
   delay(CFG.wait.pose1000Ms);
 
   // CFG.mission.blockSignatureMap으로 관심 시그니처만 필터링하여 스캔
@@ -281,39 +455,38 @@ void step3_scan()
   int16_t bestBlockX[MissionConfig::MAX_MISSION_BLOCKS];
   uint8_t bestBlockSig[MissionConfig::MAX_MISSION_BLOCKS];
   uint8_t bestCount = 0;
+  uint8_t missionInstructionSignatureMap = getMissionInstructionSignatureMap();
+  printPixyRecognitionMode(F("  [미션지시존 signature 필터]"), missionInstructionSignatureMap);
 
-  for (int attempt = 0; attempt < 20; attempt++)
+  while (bestCount == 0)
   {
-    pixy.ccc.getBlocks(true, CFG.mission.blockSignatureMap);
-    if (pixy.ccc.numBlocks > 0 && pixy.ccc.numBlocks >= bestCount)
+    for (int attempt = 0; attempt < 20; attempt++)
     {
-      bestCount = min((uint8_t)pixy.ccc.numBlocks, (uint8_t)MissionConfig::MAX_MISSION_BLOCKS);
-      for (int i = 0; i < bestCount; i++)
+      pixy.ccc.getBlocks(true, missionInstructionSignatureMap);
+      if (pixy.ccc.numBlocks > 0 && pixy.ccc.numBlocks >= bestCount)
       {
-        bestBlockX[i] = pixy.ccc.blocks[i].m_x;
-        bestBlockSig[i] = pixy.ccc.blocks[i].m_signature;
+        bestCount = min((uint8_t)pixy.ccc.numBlocks, (uint8_t)MissionConfig::MAX_MISSION_BLOCKS);
+        for (int i = 0; i < bestCount; i++)
+        {
+          bestBlockX[i] = pixy.ccc.blocks[i].m_x;
+          bestBlockSig[i] = pixy.ccc.blocks[i].m_signature;
+        }
       }
+      delay(CFG.wait.scanSampleMs);
     }
-    delay(CFG.wait.scanSampleMs);
-  }
 
-  // 카메라 인식 수를 대회 설정 블록 수로 제한
-  totalBlocks = min(bestCount, (uint8_t)CFG.mission.blockCount);
-
-  if (totalBlocks == 0)
-  {
-    DEBUG_SERIAL.println(F("  [경고] 블록 미인식! 기본 1개 설정"));
-    // 최소 1개는 처리 시도
-    totalBlocks = 1;
-    targetSigs[0] = 1;
-    goalPositions[0] = 1;
-    return;
+    if (bestCount == 0)
+    {
+      DEBUG_SERIAL.println(F("  [정지] 미션지시존 블록을 인식하지 못했습니다."));
+      DEBUG_SERIAL.println(F("  조명/카메라/블록 위치를 확인한 뒤 다시 스캔하세요."));
+      waitForSW1Continue(F("  블록 미인식 상태입니다. SW1을 누르면 미션지시존 스캔을 다시 시도합니다."));
+    }
   }
 
   // X좌표 기준 버블정렬 (왼→오른 = 미션 순서)
-  for (int i = 0; i < totalBlocks - 1; i++)
+  for (int i = 0; i < bestCount - 1; i++)
   {
-    for (int j = 0; j < totalBlocks - 1 - i; j++)
+    for (int j = 0; j < bestCount - 1 - i; j++)
     {
       if (bestBlockX[j] > bestBlockX[j + 1])
       {
@@ -326,6 +499,9 @@ void step3_scan()
       }
     }
   }
+
+  // 카메라 인식 수를 대회 설정 블록 수로 제한
+  totalBlocks = min(bestCount, (uint8_t)CFG.mission.blockCount);
 
   // 결과 저장: i번째 블록 → 대회 당일 발표된 칸에 배치
   for (int i = 0; i < totalBlocks; i++)
@@ -359,7 +535,8 @@ void step4_alignToStorage()
   DEBUG_SERIAL.println(F("========================================"));
 
   // STORAGE 자세 (팔 접기, 이동 안전)
-  RunManipulatorPoseWithPoseDataInEEPROM(STORAGE, 1000, 0.0);
+  runRequiredManipulatorPose(STORAGE, 1000, 0.0,
+                             F("  적재함으로 이동하기 전 2번 안전 이동 자세가 필요합니다."));
   delay(CFG.wait.pose1000Ms);
   DEBUG_SERIAL.println(F("  STORAGE 자세 완료"));
 
@@ -460,25 +637,25 @@ void step4_alignToStorage()
 // ============================================================
 
 /*
- * 카메라에 블록이 MissionConfig.cameraScan 범위로 잡혔을 때
- * 미세조정 → 상/하층 판별 → 집기까지 수행
+ * 카메라에 목표 signature 블록이 잡혔을 때 미세조정 → 상/하층 판별 → 집기까지 수행
  * 반환: true=집기 성공, false=실패
  */
 bool fineTuneAndPick(uint8_t targetSigmap)
 {
   SetMobileGoalVelocityForSyncWrite(dxl, 0, 0, 0, 0);
-  DEBUG_SERIAL.println(F("    블록 중앙 감지 → 미세조정 시작"));
+  DEBUG_SERIAL.println(F("    목표 블록 감지 → 미세조정 시작"));
 
   unsigned long t0 = millis();
   while (1)
   {
-    pixy.ccc.getBlocks(true, targetSigmap);
+    int16_t blockX = 0;
+    int16_t blockY = 0;
 
-    if (pixy.ccc.numBlocks)
+    if (readLargestTargetBlock(targetSigmap, &blockX, &blockY))
     {
-      int16_t blockXError = pixy.ccc.blocks[0].m_x - PIXY2_X_SETPOINT;
+      int16_t blockXError = blockX - CFG.cameraScan.storageXSetpoint;
 
-      if (!DriveWithOneSensor(dxl, blockXError, PIXY2_X_TOLERANCE,
+      if (!DriveWithOneSensor(dxl, blockXError, CFG.cameraScan.storageXTolerance,
                               DRIVE_DIRECTION_LEFT,
                               CFG.speed.cameraFineTuneSpeed))
       {
@@ -487,22 +664,26 @@ bool fineTuneAndPick(uint8_t targetSigmap)
         DEBUG_SERIAL.println(F("    미세조정 완료"));
 
         // 상/하층 판별
-        if (pixy.ccc.blocks[0].m_y < PIXY2_Y_SETPOINT)
+        if (blockY < CFG.cameraScan.storageYUpperLowerSplit)
         {
           // 상층 블록
           DEBUG_SERIAL.println(F("    상층 블록 집기"));
-          RunManipulatorPoseWithPoseDataInEEPROM(PRE_GRIP_UPPER_BLOCK, 1000, 0.0);
+          runRequiredManipulatorPose(PRE_GRIP_UPPER_BLOCK, 1000, 0.0,
+                                     F("  상층 블록 집기 준비 자세가 필요합니다."));
           delay(CFG.wait.pose1000Ms);
-          RunManipulatorPoseWithPoseDataInEEPROM(GRIP_UPPER_BLOCK, 1000, 0.0);
+          runRequiredManipulatorPose(GRIP_UPPER_BLOCK, 1000, 0.0,
+                                     F("  상층 블록 집기 자세가 필요합니다."));
           delay(CFG.wait.pose1500Ms);
         }
         else
         {
           // 하층 블록
           DEBUG_SERIAL.println(F("    하층 블록 집기"));
-          RunManipulatorPoseWithPoseDataInEEPROM(PRE_GRIP_LOWER_BLOCK, 1000, 0.0);
+          runRequiredManipulatorPose(PRE_GRIP_LOWER_BLOCK, 1000, 0.0,
+                                     F("  하층 블록 집기 준비 자세가 필요합니다."));
           delay(CFG.wait.pose1000Ms);
-          RunManipulatorPoseWithPoseDataInEEPROM(GRIP_LOWER_BLOCK, 1000, 0.0);
+          runRequiredManipulatorPose(GRIP_LOWER_BLOCK, 1000, 0.0,
+                                     F("  하층 블록 집기 자세가 필요합니다."));
           delay(CFG.wait.pose1500Ms);
         }
 
@@ -512,7 +693,8 @@ bool fineTuneAndPick(uint8_t targetSigmap)
         DEBUG_SERIAL.println(F("    그리퍼 닫기 완료"));
 
         // STORAGE 자세로 접기 (이동 안전)
-        RunManipulatorPoseWithPoseDataInEEPROM(STORAGE, 1000, 0.0);
+        runRequiredManipulatorPose(STORAGE, 1000, 0.0,
+                                   F("  집은 블록을 들고 이동하기 전 2번 안전 이동 자세가 필요합니다."));
         delay(CFG.wait.pose1500Ms);
 
         return true;
@@ -539,7 +721,7 @@ bool fineTuneAndPick(uint8_t targetSigmap)
 /*
  * 블록을 미션수행존 goalPos번 칸에 배치
  */
-void placeAtZone(uint8_t goalPos)
+bool placeAtZone(uint8_t goalPos)
 {
   DEBUG_SERIAL.print(F("    미션수행존 "));
   DEBUG_SERIAL.print(goalPos);
@@ -565,14 +747,17 @@ void placeAtZone(uint8_t goalPos)
   delay(CFG.wait.driveSettleMs);
 
   // STORAGE 자세에서 motor1을 -90도로 회전 (미션수행존 방향)
-  RunManipulatorPoseWithPoseDataInEEPROM(STORAGE, 800, -90.0);
+  runRequiredManipulatorPose(STORAGE, 800, -90.0,
+                             F("  미션 수행존 방향으로 팔을 돌리기 위해 2번 안전 이동 자세가 필요합니다."));
   delay(CFG.wait.pose800Ms);
 
-  // 미션수행존 배치 자세 (CFG.pose.missionZoneStartId + goalPos)
-  uint8_t placePoseId = CFG.pose.missionZoneStartId + goalPos;
+  // 미션수행존 배치 자세 (기본값: 7번=1번 칸, 14번=8번 칸)
+  uint8_t placePoseId = missionZonePoseIdForGoal(goalPos);
   DEBUG_SERIAL.print(F("    배치 자세 EEPROM #"));
   DEBUG_SERIAL.println(placePoseId);
-  RunManipulatorPoseWithPoseDataInEEPROM(placePoseId, 1000);
+  runRequiredManipulatorPose(placePoseId, 1000,
+                             -360.0,
+                             F("  미션 수행존 배치 자세가 없으면 그리퍼를 열지 않습니다."));
   delay(CFG.wait.pose1300Ms);
 
   // 그리퍼 열기
@@ -581,8 +766,10 @@ void placeAtZone(uint8_t goalPos)
   DEBUG_SERIAL.println(F("    블록 배치 완료"));
 
   // STORAGE 자세로 복귀 (정면 0도)
-  RunManipulatorPoseWithPoseDataInEEPROM(STORAGE, 1000, 0.0);
+  runRequiredManipulatorPose(STORAGE, 1000, 0.0,
+                             F("  배치 후 복귀를 위해 2번 안전 이동 자세가 필요합니다."));
   delay(CFG.wait.pose1500Ms);
+  return true;
 }
 
 /*
@@ -633,8 +820,20 @@ void step5_pickAndPlace()
   for (int blockIdx = 0; blockIdx < totalBlocks; blockIdx++)
   {
     uint8_t targetSig = targetSigs[blockIdx];
-    uint8_t targetSigmap = (1 << (targetSig - 1));
     uint8_t goalPos = goalPositions[blockIdx];
+
+    uint8_t targetSigmap = getStorageTargetSignatureMap(targetSig);
+    if (targetSigmap == 0)
+    {
+      DEBUG_SERIAL.print(F("  [정지] 스토리지 signature 필터에서 Sig"));
+      DEBUG_SERIAL.println(targetSig);
+      DEBUG_SERIAL.println(F("  이 비활성화되어 있거나 잘못된 signature입니다."));
+      waitForSW1Continue(F("  MissionConfig.h의 storageAllowedSignatureMap을 확인한 뒤 SW1을 누르면 다시 시도합니다."));
+      blockIdx--;
+      continue;
+    }
+
+    printPixyRecognitionMode(F("  [스토리지 signature 필터]"), targetSigmap);
 
     DEBUG_SERIAL.print(F("\n  === 블록 "));
     DEBUG_SERIAL.print(blockIdx + 1);
@@ -647,7 +846,8 @@ void step5_pickAndPlace()
     DEBUG_SERIAL.println(F(" ==="));
 
     // STORAGE 자세 + 카메라 램프 확인
-    RunManipulatorPoseWithPoseDataInEEPROM(STORAGE, 800, 0.0);
+    runRequiredManipulatorPose(STORAGE, 800, 0.0,
+                               F("  적재함 스캔 전 2번 안전 이동 자세가 필요합니다."));
     delay(CFG.wait.pose800Ms);
     pixy.setLamp(1, 1);
     delay(CFG.wait.cameraLampMs);
@@ -661,14 +861,16 @@ void step5_pickAndPlace()
     do
     {
       // 카메라로 목표 시그니처 블록 확인
-      pixy.ccc.getBlocks(true, targetSigmap);
-
-      if (pixy.ccc.numBlocks && pixy.ccc.blocks[0].m_x > CFG.cameraScan.centerXMin && pixy.ccc.blocks[0].m_x < CFG.cameraScan.centerXMax)
+      int16_t blockX = 0;
+      int16_t blockY = 0;
+      if (readLargestTargetBlock(targetSigmap, &blockX, &blockY))
       {
-        // 블록이 카메라 중앙 부근 → 정지 후 미세조정+집기
-        if (fineTuneAndPick(targetSigmap))
+        DEBUG_SERIAL.print(F("  목표 블록 감지 X="));
+        DEBUG_SERIAL.print(blockX);
+        DEBUG_SERIAL.print(F(" Y="));
+        DEBUG_SERIAL.println(blockY);
+        if (fineTuneAndPick(targetSigmap) && placeAtZone(goalPos))
         {
-          placeAtZone(goalPos);
           found = true;
           break;
         }
@@ -695,13 +897,16 @@ void step5_pickAndPlace()
       t0 = millis();
       do
       {
-        pixy.ccc.getBlocks(true, targetSigmap);
-
-        if (pixy.ccc.numBlocks && pixy.ccc.blocks[0].m_x > CFG.cameraScan.centerXMin && pixy.ccc.blocks[0].m_x < CFG.cameraScan.centerXMax)
+        int16_t blockX = 0;
+        int16_t blockY = 0;
+        if (readLargestTargetBlock(targetSigmap, &blockX, &blockY))
         {
-          if (fineTuneAndPick(targetSigmap))
+          DEBUG_SERIAL.print(F("  목표 블록 감지 X="));
+          DEBUG_SERIAL.print(blockX);
+          DEBUG_SERIAL.print(F(" Y="));
+          DEBUG_SERIAL.println(blockY);
+          if (fineTuneAndPick(targetSigmap) && placeAtZone(goalPos))
           {
-            placeAtZone(goalPos);
             found = true;
             break;
           }
@@ -730,9 +935,12 @@ void step5_pickAndPlace()
     }
     else
     {
-      DEBUG_SERIAL.print(F("  [경고] Sig"));
+      DEBUG_SERIAL.print(F("  [정지] Sig"));
       DEBUG_SERIAL.print(targetSig);
-      DEBUG_SERIAL.println(F(" 블록 미발견, 다음으로"));
+      DEBUG_SERIAL.println(F(" 블록을 찾지 못했습니다."));
+      waitForSW1Continue(F("  스토리지 목표 블록 미발견 상태입니다. SW1을 누르면 같은 블록을 다시 탐색합니다."));
+      blockIdx--;
+      continue;
     }
 
     // 글로벌 시간 체크: 복귀 시간 확보
@@ -763,9 +971,12 @@ void step6_return()
   DEBUG_SERIAL.println(F("========================================"));
 
   // STORAGE 자세 → INITIAL 자세
-  RunManipulatorPoseWithPoseDataInEEPROM(STORAGE, 800, 0.0);
+  runRequiredManipulatorPose(STORAGE, 800, 0.0,
+                             F("  복귀 전 2번 안전 이동 자세가 필요합니다."));
   delay(CFG.wait.pose800Ms);
-  RunManipulatorPoseWithPoseDataInEEPROM(INITIAL_AND_MISSION_INSTRUCTION, 1000);
+  runRequiredManipulatorPose(INITIAL_AND_MISSION_INSTRUCTION, 1000,
+                             -360.0,
+                             F("  복귀 전 1번 초기 자세가 필요합니다."));
   delay(CFG.wait.pose1000Ms);
 
   // 카메라 램프 OFF
@@ -783,15 +994,15 @@ void step6_return()
   while (1)
   {
     GetValueFromSideLeftPSDSensor(&slVal);
-    if (!DriveUntilNoObstacleWithOneSensor(dxl, slVal, CFG.finishReturn.boundaryAdc,
-                                           DRIVE_DIRECTION_BACKWARD,
-                                           CFG.speed.returnSpeed))
+    if (slVal <= CFG.finishReturn.boundaryAdc)
       break;
+    driveBackwardWithLeftBoundaryCorrection(slVal);
     if (millis() - t0 > CFG.timeout.returnPhaseMs)
     {
       DEBUG_SERIAL.println(F("  [6-1] 타임아웃"));
       break;
     }
+    delay(10);
   }
   SetMobileGoalVelocityForSyncWrite(dxl, 0, 0, 0, 0);
   delay(CFG.wait.driveSettleMs);
@@ -802,10 +1013,7 @@ void step6_return()
   while (1)
   {
     GetValueFromSideLeftPSDSensor(&slVal);
-    SetMobileGoalVelocityForSyncWrite(dxl, -CFG.speed.returnSpeed,
-                                      -CFG.speed.returnSpeed,
-                                      -CFG.speed.returnSpeed,
-                                      -CFG.speed.returnSpeed); // 후진
+    driveBackwardWithLeftBoundaryCorrection(slVal);
     if (slVal > CFG.finishReturn.boundaryAdc)
     {
       SetMobileGoalVelocityForSyncWrite(dxl, 0, 0, 0, 0);
@@ -828,15 +1036,15 @@ void step6_return()
   while (1)
   {
     GetValueFromSideLeftPSDSensor(&slVal);
-    if (!DriveUntilNoObstacleWithOneSensor(dxl, slVal, CFG.finishReturn.boundaryAdc,
-                                           DRIVE_DIRECTION_BACKWARD,
-                                           CFG.speed.returnSpeed))
+    if (slVal <= CFG.finishReturn.boundaryAdc)
       break;
+    driveBackwardWithLeftBoundaryCorrection(slVal);
     if (millis() - t0 > CFG.timeout.returnPhaseMs)
     {
       DEBUG_SERIAL.println(F("  [6-3] 타임아웃"));
       break;
     }
+    delay(10);
   }
   SetMobileGoalVelocityForSyncWrite(dxl, 0, 0, 0, 0);
   delay(CFG.wait.driveSettleMs);
@@ -845,15 +1053,19 @@ void step6_return()
   DEBUG_SERIAL.print(F("  [6-4] Finish Zone 진입 ("));
   DEBUG_SERIAL.print(CFG.finishReturn.finishExtraMs);
   DEBUG_SERIAL.println(F("ms)..."));
-  SetMobileGoalVelocityForSyncWrite(dxl, -CFG.speed.returnSpeed,
-                                    -CFG.speed.returnSpeed,
-                                    -CFG.speed.returnSpeed,
-                                    -CFG.speed.returnSpeed); // 후진
-  delay(CFG.finishReturn.finishExtraMs);
+  t0 = millis();
+  while (millis() - t0 < CFG.finishReturn.finishExtraMs)
+  {
+    GetValueFromSideLeftPSDSensor(&slVal);
+    driveBackwardWithLeftBoundaryCorrection(slVal);
+    delay(10);
+  }
   SetMobileGoalVelocityForSyncWrite(dxl, 0, 0, 0, 0);
 
   // 최종 정지, INITIAL 자세
-  RunManipulatorPoseWithPoseDataInEEPROM(INITIAL_AND_MISSION_INSTRUCTION, 1000);
+  runRequiredManipulatorPose(INITIAL_AND_MISSION_INSTRUCTION, 1000,
+                             -360.0,
+                             F("  미션 완료 시 1번 초기 자세로 복귀해야 합니다."));
   delay(CFG.wait.pose1000Ms);
 
   // LED 끄기

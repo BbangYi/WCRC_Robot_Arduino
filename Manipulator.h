@@ -106,6 +106,7 @@ void SetManipulatorForwardMoveWithMotorValueForSyncWrite( int32_t mv1,
 void SetManipulatorInverseMoveForSyncWrite( int16_t x, int16_t y, int16_t z,
                                             int16_t angle,
                                             int32_t operatingTime );
+bool IsManipulatorPoseDataValid(uint8_t requestedId, ManipulatorPose manipulatorPose);
 void PrintManipulatorPoseListFromEEPROM();
 void WriteManipulatorPresentPoseToEEPROM(uint8_t id, String description);
 ManipulatorPose ReadManipulatorPresentPoseToEEPROM(uint8_t id);
@@ -385,23 +386,38 @@ void SetManipulatorForwardMoveWithMotorValueForSyncWrite( int32_t mv1,
 void SetManipulatorInverseMoveForSyncWrite( int16_t x, int16_t y, int16_t z,
                                             int16_t angle,
                                             int32_t operatingTime ) {
+  if (y == 0) {
+#ifdef DEBUG
+    DEBUG_SERIAL.println(F("Inverse move skipped: y must not be 0."));
+#endif
+    return;
+  }
+
   int16_t zFromMotor2 = z - d; // 계산의 편의를 위해 2번 모터 관절과 지면 사이의 거리를
                                // 무시한 z축(위/아래) 거리
   // 매니퓰레이터를 측면에서 봤을 때 전진 거리 yd
-  float yd = sqrt((int32_t)x*x + (int32_t)y*y)*(y/abs(y));
+  float yd = sqrt((int32_t)x*x + (int32_t)y*y) * (y < 0 ? -1.0 : 1.0);
   // 매니퓰레이터를 측면에서 봤을 때 2번째 링크가 끝나는 점의 위치 (y2, z2)
   float y2 = yd - L3*cos(radians(angle));
   float z2 = zFromMotor2 - L3*sin(radians(angle));
-  
+  float reachRatio = (y2*y2 + z2*z2 - L1*L1 - L2*L2)/(2*L1*L2);
+  if (reachRatio < -1.0 || reachRatio > 1.0) {
+#ifdef DEBUG
+    DEBUG_SERIAL.println(F("Inverse move skipped: target is out of manipulator reach."));
+#endif
+    return;
+  }
+  float rootTerm = 1 - reachRatio*reachRatio;
+  if (rootTerm < 0) rootTerm = 0;
+
   // 세타1을 구하기 위해 사용되는 변수
-  float k1 = L1 + L2*(y2*y2 + z2*z2 - L1*L1 - L2*L2)/(2*L1*L2);
-  float k2 = L2*-1*sqrt(1 - pow((y2*y2 + z2*z2 - L1*L1 - L2*L2)/(2*L1*L2), 2));
+  float k1 = L1 + L2*reachRatio;
+  float k2 = L2*-1*sqrt(rootTerm);
   float theta1 = 0, theta2 = 0, theta3 = 0, theta4 = 0; // 모터별 세타 변수
 
   theta1 = degrees(atan2(y, x)); // atan2는 -pi~pi 범위로 결과를 반환 함
   theta2 = degrees(atan2(z2, y2)) - degrees(atan2(k2, k1));
-  theta3 = degrees(atan2(-1*sqrt(1 - pow((y2*y2 + z2*z2 - L1*L1 - L2*L2)/(2*L1*L2), 2)),
-                     (y2*y2 + z2*z2 - L1*L1 - L2*L2)/(2*L1*L2)));
+  theta3 = degrees(atan2(-1*sqrt(rootTerm), reachRatio));
   theta4 = angle - theta2 - theta3;
 
   float a1 = 90 - theta1; // 세타 값을 모터 제어를 위한 각도로 변환
@@ -441,27 +457,71 @@ void SetManipulatorInverseMoveForSyncWrite( int16_t x, int16_t y, int16_t z,
 }
 
 /*
+ * EEPROM에서 읽은 포즈 데이터가 실제로 저장된 정상 데이터인지 확인
+ * 초기화되지 않은 EEPROM은 0xFF로 채워져 id=255, motor=-1처럼 보일 수 있음
+ */
+bool IsManipulatorPoseDataValid(uint8_t requestedId, ManipulatorPose manipulatorPose) {
+  if (!manipulatorPose.isTherePoseData) return false;
+  if (manipulatorPose.id != requestedId) return false;
+
+  // EEPROM 유효성 검사는 쓰레기값(-1 등)만 걸러낸다.
+  // 실제 모터별 안전 범위 제한은 실행 직전 SetManipulatorForwardMove...에서 처리한다.
+  if (manipulatorPose.manipulatorMotor1Value < 0 ||
+      manipulatorPose.manipulatorMotor1Value > 4095) return false;
+  if (manipulatorPose.manipulatorMotor2Value < 0 ||
+      manipulatorPose.manipulatorMotor2Value > 4095) return false;
+  if (manipulatorPose.manipulatorMotor3Value < 0 ||
+      manipulatorPose.manipulatorMotor3Value > 4095) return false;
+  if (manipulatorPose.manipulatorMotor4Value < 0 ||
+      manipulatorPose.manipulatorMotor4Value > 4095) return false;
+
+  for (int i = 0 ; i < MANIPULATOR_POSE_DESCRIPTION_SIZE ; i++) {
+    uint8_t descriptionByte = (uint8_t)manipulatorPose.description[i];
+    if (descriptionByte == '\0') return true;
+    if (descriptionByte < 32 || descriptionByte == 127 || descriptionByte == 255) return false;
+  }
+
+  return false;
+}
+
+/*
  * 매니퓰레이터 포즈 리스트를 출력
  */
 void PrintManipulatorPoseListFromEEPROM() {
+  uint8_t savedPoseCount = 0;
+  DEBUG_SERIAL.println(F("[목록] 저장된 매니퓰레이터 자세"));
+  DEBUG_SERIAL.println(F("--------------------------------"));
+
   for (int i = 1 ; i <= MANIPULATOR_POSE_ID_MAX_CNT ; i++) {
       ManipulatorPose manipulatorPose = ReadManipulatorPresentPoseToEEPROM(i);
       if (manipulatorPose.isTherePoseData) {
+        savedPoseCount++;
+        DEBUG_SERIAL.print(F("ID "));
         DEBUG_SERIAL.print(manipulatorPose.id);
-        DEBUG_SERIAL.print(F("."));
-        DEBUG_SERIAL.println(manipulatorPose.description);
-        DEBUG_SERIAL.print(F("m1 : "));
+        DEBUG_SERIAL.print(F(" : "));
+        if (manipulatorPose.description[0] == '\0') {
+          DEBUG_SERIAL.println(F("(설명 없음)"));
+        } else {
+          DEBUG_SERIAL.println(manipulatorPose.description);
+        }
+        DEBUG_SERIAL.print(F("  모터값 m1="));
         DEBUG_SERIAL.print(manipulatorPose.manipulatorMotor1Value);
-        DEBUG_SERIAL.print(F(", m2 : "));
+        DEBUG_SERIAL.print(F(", m2="));
         DEBUG_SERIAL.print(manipulatorPose.manipulatorMotor2Value);
-        DEBUG_SERIAL.print(F(", m3 : "));
+        DEBUG_SERIAL.print(F(", m3="));
         DEBUG_SERIAL.print(manipulatorPose.manipulatorMotor3Value);
-        DEBUG_SERIAL.print(F(", m4 : "));
+        DEBUG_SERIAL.print(F(", m4="));
         DEBUG_SERIAL.println(manipulatorPose.manipulatorMotor4Value);
         DEBUG_SERIAL.println();
       }
   }
-  DEBUG_SERIAL.println(F("fin"));
+
+  if (savedPoseCount == 0) {
+    DEBUG_SERIAL.println(F("저장된 자세가 없습니다."));
+    DEBUG_SERIAL.println(F("팔을 원하는 위치로 맞춘 뒤 manageManipulatorPose에서 먼저 저장하세요."));
+  }
+
+  DEBUG_SERIAL.println(F("[목록 끝]"));
   DEBUG_SERIAL.println();
 }
 
@@ -473,13 +533,14 @@ void PrintManipulatorPoseListFromEEPROM() {
  */
 void WriteManipulatorPresentPoseToEEPROM(uint8_t id, String description) {
   ManipulatorPose manipulatorPose;
+  memset(&manipulatorPose, 0, sizeof(manipulatorPose));
   manipulatorPose.isTherePoseData = true;
   manipulatorPose.id = id;
   manipulatorPose.manipulatorMotor1Value = dxl.readControlTableItem(PRESENT_POSITION, ARM_DXL_IDS[0]);
   manipulatorPose.manipulatorMotor2Value = dxl.readControlTableItem(PRESENT_POSITION, ARM_DXL_IDS[1]);
   manipulatorPose.manipulatorMotor3Value = dxl.readControlTableItem(PRESENT_POSITION, ARM_DXL_IDS[2]);
   manipulatorPose.manipulatorMotor4Value = dxl.readControlTableItem(PRESENT_POSITION, ARM_DXL_IDS[3]);
-  description.toCharArray(manipulatorPose.description, description.length()+1);
+  description.toCharArray(manipulatorPose.description, MANIPULATOR_POSE_DESCRIPTION_SIZE);
 
   EEPROM.put(MANIPULATOR_POSE_DATA_SIZE*(id-1), manipulatorPose);
 }
@@ -492,10 +553,19 @@ void WriteManipulatorPresentPoseToEEPROM(uint8_t id, String description) {
  */
 ManipulatorPose ReadManipulatorPresentPoseToEEPROM(uint8_t id) {
   ManipulatorPose manipulatorPose;
+  memset(&manipulatorPose, 0, sizeof(manipulatorPose));
   manipulatorPose.isTherePoseData = false;
+  manipulatorPose.id = id;
 
-  if (id >= 1 && id <= MANIPULATOR_POSE_ID_MAX_CNT)
+  if (id >= 1 && id <= MANIPULATOR_POSE_ID_MAX_CNT) {
     EEPROM.get(MANIPULATOR_POSE_DATA_SIZE*(id-1), manipulatorPose);
+    manipulatorPose.description[MANIPULATOR_POSE_DESCRIPTION_SIZE-1] = '\0';
+    if (!IsManipulatorPoseDataValid(id, manipulatorPose)) {
+      memset(&manipulatorPose, 0, sizeof(manipulatorPose));
+      manipulatorPose.isTherePoseData = false;
+      manipulatorPose.id = id;
+    }
+  }
 
   return manipulatorPose;
 }
@@ -507,8 +577,12 @@ ManipulatorPose ReadManipulatorPresentPoseToEEPROM(uint8_t id) {
  *    id : 삭제할 포즈의 아이디
  */
 void RemoveManipulatorPresentPoseFromEEPROM(uint8_t id) {
-  if (id >= 1 && id <= MANIPULATOR_POSE_ID_MAX_CNT)
-    EEPROM.update(MANIPULATOR_POSE_DATA_SIZE*(id-1), 0);
+  if (id >= 1 && id <= MANIPULATOR_POSE_ID_MAX_CNT) {
+    ManipulatorPose manipulatorPose;
+    memset(&manipulatorPose, 0, sizeof(manipulatorPose));
+    manipulatorPose.id = id;
+    EEPROM.put(MANIPULATOR_POSE_DATA_SIZE*(id-1), manipulatorPose);
+  }
 }
 
 /*
