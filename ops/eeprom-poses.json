@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
   "projectId": "wcrc-robot-arduino",
-  "updatedAt": "2026-04-30T00:00:00+09:00",
+  "updatedAt": "2026-05-07T00:00:00+09:00",
   "notes": [
     "모터 값은 EEPROM에서 읽거나 manageManipulatorPose에서 확인하기 전까지 null로 둔다.",
     "verificationStatus 값: unverified, no-load-pass, block-test-pass, mission-pass, do-not-use.",
-    "자세 ID 7~14는 미션 수행존 1~8번 칸에 대응한다."
+    "현재 실제 테스트에서 자세 ID 7~14는 미션 수행존 1~8번 칸에 대응한다."
   ],
   "poses": [
     {
       "poseId": 1,
       "name": "초기 / 미션 지시존 카메라 자세",
-      "role": "initial",
+      "role": "initial-mission-instruction",
       "motors": { "m1": null, "m2": null, "m3": null, "m4": null },
       "verificationStatus": "unverified",
       "lastTestAt": null,
@@ -19,21 +19,21 @@
     },
     {
       "poseId": 2,
-      "name": "보관 / 안전 이동 자세",
-      "role": "storage",
+      "name": "예비 / 수동 테스트",
+      "role": "reserved-manual",
       "motors": { "m1": null, "m2": null, "m3": null, "m4": null },
       "verificationStatus": "unverified",
       "lastTestAt": null,
-      "notes": "안전 이동과 미션 수행존 방향 회전 전에 사용한다."
+      "notes": "현재 본 미션에서는 사용하지 않는다. 임시 수동 테스트용으로만 남긴다."
     },
     {
       "poseId": 3,
-      "name": "상단 집기 준비",
-      "role": "pre-grip-upper",
+      "name": "적재함 보기 / 안전 이동 자세",
+      "role": "storage-view-safe",
       "motors": { "m1": null, "m2": null, "m3": null, "m4": null },
       "verificationStatus": "unverified",
       "lastTestAt": null,
-      "notes": "블록 테스트 전에 무부하 매니퓰레이터 테스트가 필요하다."
+      "notes": "적재함 기준 위치에서 Pixy로 위/아래 영역과 grip target 정렬을 확인하고, 안전 이동에도 사용한다."
     },
     {
       "poseId": 4,
@@ -42,25 +42,25 @@
       "motors": { "m1": null, "m2": null, "m3": null, "m4": null },
       "verificationStatus": "unverified",
       "lastTestAt": null,
-      "notes": "공식 주행 전에 그리퍼와 적재함 간섭을 확인한다."
+      "notes": "상단 블록 집기 자세. RFID 카드 간섭 때문에 upper 집기 후 복귀는 m4, m3, m2 staged 순서를 사용한다."
     },
     {
       "poseId": 5,
-      "name": "하단 집기 준비",
-      "role": "pre-grip-lower",
-      "motors": { "m1": null, "m2": null, "m3": null, "m4": null },
-      "verificationStatus": "unverified",
-      "lastTestAt": null,
-      "notes": "공식 주행 전에 바닥과 적재함 간섭을 확인한다."
-    },
-    {
-      "poseId": 6,
       "name": "하단 집기",
       "role": "grip-lower",
       "motors": { "m1": null, "m2": null, "m3": null, "m4": null },
       "verificationStatus": "unverified",
       "lastTestAt": null,
-      "notes": "집기 자세 중 충돌 위험이 가장 크므로 블록 없이 먼저 테스트한다."
+      "notes": "하단 블록 집기 자세. 공식 주행 전에 그리퍼와 적재함 간섭을 확인한다."
+    },
+    {
+      "poseId": 6,
+      "name": "예비 / 현재 미사용",
+      "role": "reserved-manual",
+      "motors": { "m1": null, "m2": null, "m3": null, "m4": null },
+      "verificationStatus": "unverified",
+      "lastTestAt": null,
+      "notes": "현재 본 미션에서는 사용하지 않는다. 임시 수동 테스트용으로만 남긴다."
     },
     {
       "poseId": 7,

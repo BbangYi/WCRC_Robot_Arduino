@@ -39,6 +39,8 @@ This version targets the WCRC logistics robot 2 sorting mission and keeps the fu
 - Keep low-level pin assignments in `Pins.h`.
 - Keep low-level mobile-base motor defaults in `Mobilebase.h`.
 - Use `CFG.speed` for mission-level mobile-base speeds.
+- Use `CFG.poseTiming` for manipulator motion profile times.
+- Use `CFG.wait.poseSettleMs` only as the short settle time after each manipulator profile.
 - Treat `MOBILEBASE_DEFAULT_DRIVING_SPEED` and `MOBILEBASE_DEFAULT_DRIVING_MM_PER_S` as fallback defaults for the low-level mobile-base helper.
 
 ## Operations Records
@@ -55,19 +57,48 @@ This version targets the WCRC logistics robot 2 sorting mission and keeps the fu
 - `CFG.front.firstDetectAdc`: `350`
 - `CFG.front.cruiseSpeed`: `250`
 - `CFG.front.slowSpeed`: `150`
+- `CFG.psd.missionSl`: `540` (`SL` 목표값. 값을 올리면 미션지시존에서 덜 오른쪽에 멈춥니다.)
 - `CFG.speed.psdCorrectionSpeed`: `200`
 - `CFG.speed.cameraFineTuneSpeed`: `200`
 - `CFG.speed.storageScanSpeed`: `200`
 - `CFG.speed.returnSpeed`: `200`
 - `CFG.speed.positionMoveMmPerSec`: `150`
+- `CFG.poseTiming.startupInitialMs`: `1200`
+- `CFG.poseTiming.missionInstructionMs`: `800`
+- `CFG.poseTiming.storageMs`: `700`
+- `CFG.poseTiming.preGripMs`: `750`
+- `CFG.poseTiming.gripMs`: `850`
+- `CFG.poseTiming.storageWithBlockMs`: `800`
+- `CFG.poseTiming.missionZoneTurnMs`: `650`
+- `CFG.poseTiming.missionZonePlaceMs`: `800`
+- `CFG.poseTiming.finishStorageMs`: `650`
+- `CFG.poseTiming.finishInitialMs`: `800`
+- `CFG.wait.poseSettleMs`: `100`
+- `CFG.wait.gripperActionMs`: `250`
+- `CFG.cameraScan.missionInstructionMinBlockArea`: `80`
+- `CFG.cameraScan.missionInstructionLampOn`: `false`
+- `CFG.cameraScan.storageMinBlockArea`: `80`
+- `CFG.cameraScan.storageYUpperLowerSplit`: `103`
+- `CFG.storagePickupRegion`: top `(118,1)~(216,1)`, middle `(120,90)~(208,99)`, bottom `(118,190)~(205,201)`, `yMargin=12`
+- `CFG.storageGripTarget`: upper `(134,48)~(182,52)`, `(137,94)~(178,97)` / lower `(141,128)~(172,130)`, `(137,166)~(171,169)`
+- `CFG.storageGripTarget.alignTimeoutMs`: `3500`
+- `CFG.storageRack.pickSlotOrder`: currently `1, 5, 2, 6, 3, 7, 4, 8`
+- `CFG.storageRack.perSlotScanMs`: `1800`; if one slot takes longer on the field, raise this toward `2500`
+- `CFG.storageRack.columnXCenters`: currently `70, 125, 180, 235`
+- `CFG.storageRack.columnXTolerance`: `35`
 - `CFG.storageDrive.firstForwardMm`: `450.0`
 - `CFG.storageDrive.extraForwardMm`: `350.0`
 - `CFG.storageDrive.rightMm`: `60.0`
 - `CFG.finishReturn.finishExtraMs`: `3000`
-- `CFG.mission.blockCount`: `3`
-- `CFG.mission.goalPositions`: currently `1, 2, 3, 4, 5, 6`
+- `CFG.mission.dynamicBlockCount`: `true`
+- `CFG.pose.missionZoneSlotCount`: `8`, so placement uses EEPROM pose `7~14`
+- `CFG.mission.blockCount`: `8` when dynamic count is disabled
+- `CFG.mission.goalPositions`: currently `1, 2, 3, 4, 5, 6, 7, 8`
 
 Tune the PSD thresholds and mission positions on the actual competition field before running an official attempt.
+If the Pixy area filter hides valid blocks during testing, set the relevant `MinBlockArea` value to `0` first, then retune from measured `pixy scan` area values.
+The mission-instruction zone no longer pauses for SW1 before scanning. It keeps the Pixy lamp off by default through `missionInstructionLampOn`, scans with `missionInstructionMinBlockArea`, then retries once with area `0` if nothing passes the filter. If both fail, it prints raw Pixy frames with signature, x/y, area, map pass, and area pass before returning.
+The production `Motor` mission only uses SW1 for the initial start. Step-by-step SW1 progression is a `MissionRouteTuner` feature and is not used inside the autonomous mission flow.
 
 ## Fixed Storage Rack Convention
 
@@ -78,7 +109,15 @@ Storage-rack numbering is fixed and documented in `PROJECT_RULES.md`.
 5  6  7  8
 ```
 
-Current pick logic scans the storage rack with Pixy2 and picks by target signature. It does not currently drive to a hard-coded storage slot number.
+Current pick logic scans the storage rack with Pixy2, checks whether each visible block center is inside one of the configured pickup regions, nudges the mobile base until the block enters a configured grip target window, and picks in `CFG.storageRack.pickSlotOrder`.
+The current field-test run supports eight blocks: source slots `1, 5, 2, 6, 3, 7, 4, 8`, then mission-zone placements `1~8`.
+Storage picking now requires both the mission-instruction signature and the configured pickup region to match before gripping.
+If a mission-instruction scan sees zero blocks, the robot skips storage picking and returns instead of retrying forever.
+If one configured storage slot is not recognized during its scan window, that block is logged as skipped and the loop advances to the next source slot.
+After all detected signatures are placed, the robot does not re-align to the storage rack; it starts the finish reverse from the current mission-zone position.
+Use `MissionRouteTuner` command `pixy storage lower 10 0` first to verify lower pickup regions, then `pixy align lower 5000 0` to measure how long region-to-target movement takes.
+
+Upper-row gripping uses a staged joint order `m4 -> m3 -> m2` for the upper grip pose and the lift back to storage. This is intentionally slower than a single sync move because it reduces RFID-card interference while lifting the block.
 
 ## Required Hardware / Library Context
 
@@ -95,18 +134,20 @@ Current pick logic scans the storage rack with Pixy2 and picks by target signatu
 | ID | Pose |
 | --- | --- |
 | `1` | INITIAL / mission-instruction camera pose |
-| `2` | STORAGE / safe folded pose |
-| `3` | PRE_GRIP_UPPER |
+| `2` | Reserved / manual test |
+| `3` | STORAGE_VIEW_SAFE / storage camera and safe folded pose |
 | `4` | GRIP_UPPER |
-| `5` | PRE_GRIP_LOWER |
-| `6` | GRIP_LOWER |
+| `5` | GRIP_LOWER |
+| `6` | Reserved / manual test |
 | `7` to `14` | Mission-zone placement poses `1` to `8` |
 
 ## Before Uploading to the Robot
 
-1. Set the competition-day block count in `CFG.mission.blockCount`.
+1. Keep `CFG.mission.dynamicBlockCount=true` if the mission-instruction camera should decide the count, or set `blockCount` for a fixed run.
 2. Set destination zones in `CFG.mission.goalPositions`.
-3. Verify all EEPROM manipulator poses.
+3. Verify required EEPROM manipulator poses: `1,3,4,5,7~14`.
 4. Check Pixy2 signatures against `CFG.mission.blockSignatureMap`.
-5. Re-check PSD thresholds on the real field.
-6. Run the mission with the robot lifted once to confirm wheel directions before field testing.
+5. Check Pixy block areas with `MissionRouteTuner` so `missionInstructionMinBlockArea` and `storageMinBlockArea` do not hide valid blocks.
+6. Check storage slot x/y mapping with `pixy storage lower` and `pixy storage all`.
+7. Re-check PSD thresholds on the real field. If the mission-instruction stop is still too far right, raise `CFG.psd.missionSl` by 10-20; if it is too far left, lower it.
+8. Run the mission with the robot lifted once to confirm wheel directions before field testing.

@@ -30,15 +30,15 @@ camera side
 ```
 
 - Keep this numbering in `CFG.storageRack`.
-- Current picking logic does not drive to a configured storage slot number.
-- Current picking logic scans with Pixy2, centers the target signature on X, and uses Pixy2 Y to choose upper/lower grip pose.
-- If slot-addressed picking is added later, implement it against the fixed `1 2 3 4 / 5 6 7 8` convention.
+- Current picking logic detects whether a Pixy2 block center is inside configured pickup regions.
+- Tune `CFG.storagePickupRegion` from `MissionRouteTuner` using `pixy storage lower` / `pixy storage all`.
+- Default pick order is `1, 5, 2, 6, 3, 7, 4, 8`; the current field-test run caps this to the first 6 source slots.
 
 ## Mission-Zone Convention
 
-- `CFG.mission.goalPositions` is the destination order announced on competition day.
+- `CFG.mission.goalPositions` is the destination order announced on competition day. The current field-test default uses mission-zone slots `1~6`.
 - Mission-zone placement pose ID is `CFG.pose.missionZoneStartId + goalPosition`.
-- EEPROM pose IDs `7` to `14` must match mission-zone positions `1` to `8`.
+- EEPROM pose IDs `7` to `12` must match mission-zone positions `1` to `6`.
 
 ## Change Discipline
 
