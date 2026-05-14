@@ -864,10 +864,13 @@ void validateMissionConfig()
       CFG.psd.scanSlTolerance <= 0 ||
       CFG.cameraScan.storageXTolerance <= 0 ||
       CFG.storageRack.columnXTolerance <= 0 ||
+      CFG.storageRack.scanColumnStepMm <= 0.0 ||
+      CFG.storageRack.scanColumnMoveMmPerSec <= 0 ||
+      CFG.storageRack.scanFramesPerStop == 0 ||
       CFG.finishReturn.trackTolerance <= 0)
   {
     haltWithRedBlink(F("  [설정 오류] tolerance 값 오류"),
-                     F("  PSD/Pixy/복귀 보정 tolerance는 0보다 커야 합니다."));
+                     F("  PSD/Pixy/복귀/적재함 열 이동 값은 0보다 커야 합니다."));
   }
 
   if (CFG.storagePickupRegion.xMargin < 0 ||
@@ -1355,6 +1358,191 @@ bool alignStorageGripPositionForSlot(uint8_t sourceSlot)
   return alignStorageGripPosition(sourceSlot >= 5);
 }
 
+uint8_t storageColumnForSourceSlot(uint8_t sourceSlot)
+{
+  for (uint8_t i = 0; i < 4; i++)
+  {
+    if (CFG.storageRack.upperRowSlots[i] == sourceSlot ||
+        CFG.storageRack.lowerRowSlots[i] == sourceSlot)
+      return i + 1;
+  }
+  return 0;
+}
+
+bool driveOneStorageColumn(uint8_t direction)
+{
+  ChangeMobilebaseMode2ExtendedPositionControlWithTimeBasedProfileMode(dxl);
+  DriveDistanceAndMmPerSecAndDirection(dxl,
+                                       CFG.storageRack.scanColumnStepMm,
+                                       direction,
+                                       CFG.storageRack.scanColumnMoveMmPerSec);
+  bool ok = waitForMobilePositionOrTimeout(CFG.timeout.positionMoveMs,
+                                           F("  적재함 열 이동 타임아웃"));
+  ChangeMobilebaseMode2VelocityControlMode(dxl);
+  SetMobileGoalVelocityForSyncWrite(dxl, 0, 0, 0, 0);
+  return ok;
+}
+
+bool moveStorageToColumn(uint8_t *currentColumn, uint8_t targetColumn)
+{
+  if (targetColumn < 1 || targetColumn > 4)
+    return false;
+  if (*currentColumn < 1 || *currentColumn > 4)
+    *currentColumn = 1;
+
+  while (*currentColumn != targetColumn)
+  {
+    uint8_t direction = (targetColumn > *currentColumn)
+                          ? DRIVE_DIRECTION_RIGHT
+                          : DRIVE_DIRECTION_LEFT;
+    DEBUG_SERIAL.print(F("  적재함 열 이동 "));
+    DEBUG_SERIAL.print(*currentColumn);
+    DEBUG_SERIAL.print(F(" -> "));
+    DEBUG_SERIAL.print((direction == DRIVE_DIRECTION_RIGHT) ? *currentColumn + 1 : *currentColumn - 1);
+    DEBUG_SERIAL.print(F(", step="));
+    DEBUG_SERIAL.print(CFG.storageRack.scanColumnStepMm, 2);
+    DEBUG_SERIAL.print(F("mm @ "));
+    DEBUG_SERIAL.print(CFG.storageRack.scanColumnMoveMmPerSec);
+    DEBUG_SERIAL.println(F("mm/s"));
+
+    if (!driveOneStorageColumn(direction))
+      return false;
+    if (direction == DRIVE_DIRECTION_RIGHT)
+      (*currentColumn)++;
+    else
+      (*currentColumn)--;
+  }
+  return true;
+}
+
+bool scanCurrentStorageColumnForTarget(uint8_t sourceSlot,
+                                       uint8_t targetSignatureMap,
+                                       uint8_t requiredColumn,
+                                       int16_t *blockX,
+                                       int16_t *blockY,
+                                       uint8_t *blockSig,
+                                       uint8_t *pickupRegion)
+{
+  uint8_t allowedRegionMask = storagePickupRegionMaskForSlot(sourceSlot);
+  uint8_t frames = CFG.storageRack.scanFramesPerStop;
+  if (frames < 1)
+    frames = 1;
+  if (frames > 20)
+    frames = 20;
+
+  DEBUG_SERIAL.print(F("  현재 열 Pixy 스캔: sourceSlot="));
+  DEBUG_SERIAL.print(sourceSlot);
+  DEBUG_SERIAL.print(F(", column="));
+  DEBUG_SERIAL.print(requiredColumn);
+  DEBUG_SERIAL.print(F(", frames="));
+  DEBUG_SERIAL.print(frames);
+  DEBUG_SERIAL.print(F(", minArea="));
+  DEBUG_SERIAL.println(CFG.storageRack.scanMinBlockArea);
+
+  int8_t bestIndex = -1;
+  uint8_t bestRegion = 0;
+  uint8_t bestSig = 0;
+  int16_t bestX = 0;
+  int16_t bestY = 0;
+  uint32_t bestArea = 0;
+  bool sawSignature = false;
+  bool sawPickupWindow = false;
+
+  for (uint8_t frame = 0; frame < frames; frame++)
+  {
+    pixy.ccc.getBlocks(true, targetSignatureMap);
+    DEBUG_SERIAL.print(F("    frame "));
+    DEBUG_SERIAL.print(frame + 1);
+    DEBUG_SERIAL.print(F(": count="));
+    DEBUG_SERIAL.println(pixy.ccc.numBlocks);
+
+    for (uint8_t i = 0; i < pixy.ccc.numBlocks; i++)
+    {
+      if (!pixyBlockPassesFilter(i, targetSignatureMap,
+                                 CFG.storageRack.scanMinBlockArea))
+        continue;
+      sawSignature = true;
+
+      int16_t x = pixy.ccc.blocks[i].m_x;
+      int16_t y = pixy.ccc.blocks[i].m_y;
+      uint32_t area = pixyBlockArea(i);
+      uint8_t region = storagePickupRegionForPixyXY(x, y);
+      uint8_t pixyColumn = storageColumnForPixyX(x);
+      if (pixyColumn > 0 &&
+          requiredColumn >= 1 &&
+          requiredColumn <= 4 &&
+          abs((int)pixyColumn - (int)requiredColumn) > 1)
+      {
+        DEBUG_SERIAL.print(F("      reject column mismatch sig="));
+        DEBUG_SERIAL.print(pixy.ccc.blocks[i].m_signature);
+        DEBUG_SERIAL.print(F(", x/y="));
+        DEBUG_SERIAL.print(x);
+        DEBUG_SERIAL.print(F("/"));
+        DEBUG_SERIAL.print(y);
+        DEBUG_SERIAL.print(F(", pixyColumn="));
+        DEBUG_SERIAL.println(pixyColumn);
+        continue;
+      }
+      if (region == 0)
+      {
+        DEBUG_SERIAL.print(F("      reject pickup boundary sig="));
+        DEBUG_SERIAL.print(pixy.ccc.blocks[i].m_signature);
+        DEBUG_SERIAL.print(F(", x/y="));
+        DEBUG_SERIAL.print(x);
+        DEBUG_SERIAL.print(F("/"));
+        DEBUG_SERIAL.println(y);
+        continue;
+      }
+      sawPickupWindow = true;
+      if ((allowedRegionMask & storagePickupRegionBit(region)) == 0)
+      {
+        DEBUG_SERIAL.print(F("      reject layer sig="));
+        DEBUG_SERIAL.print(pixy.ccc.blocks[i].m_signature);
+        DEBUG_SERIAL.print(F(", region="));
+        DEBUG_SERIAL.println(region);
+        continue;
+      }
+
+      if (bestIndex < 0 || area > bestArea)
+      {
+        bestIndex = i;
+        bestRegion = region;
+        bestSig = pixy.ccc.blocks[i].m_signature;
+        bestX = x;
+        bestY = y;
+        bestArea = area;
+      }
+    }
+    delay(CFG.wait.scanSampleMs);
+  }
+
+  if (bestIndex < 0)
+  {
+    DEBUG_SERIAL.println(F("  현재 열에서 목표 블록을 찾지 못했습니다."));
+    if (sawSignature && !sawPickupWindow)
+      DEBUG_SERIAL.println(F("  signature는 보였지만 upper/lower pickup boundary 밖입니다."));
+    else if (sawSignature)
+      DEBUG_SERIAL.println(F("  signature는 보였지만 sourceSlot의 상/하층 조건과 맞지 않습니다."));
+    return false;
+  }
+
+  *blockX = bestX;
+  *blockY = bestY;
+  *blockSig = bestSig;
+  *pickupRegion = bestRegion;
+  DEBUG_SERIAL.print(F("  현재 열 스캔 결정 sig="));
+  DEBUG_SERIAL.print(*blockSig);
+  DEBUG_SERIAL.print(F(", x/y="));
+  DEBUG_SERIAL.print(*blockX);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.print(*blockY);
+  DEBUG_SERIAL.print(F(", region="));
+  DEBUG_SERIAL.print(*pickupRegion);
+  DEBUG_SERIAL.print(F(", area="));
+  DEBUG_SERIAL.println(bestArea);
+  return true;
+}
+
 void step4_alignToStorage()
 {
   DEBUG_SERIAL.println(F(""));
@@ -1751,6 +1939,7 @@ void step5_pickAndPlace()
   skippedBlockCount = 0;
   allDetectedBlocksPlaced = false;
   ChangeMobilebaseMode2VelocityControlMode(dxl);
+  uint8_t currentStorageColumn = 1;
 
   for (int blockIdx = 0; blockIdx < totalBlocks; blockIdx++)
   {
@@ -1772,6 +1961,12 @@ void step5_pickAndPlace()
       haltWithRedBlink(F("  [설정 오류] 스토리지 signature 필터 오류"),
                        F("  MissionConfig.h의 storageAllowedSignatureMap/Pixy signature를 확인하세요."));
     }
+    uint8_t targetColumn = storageColumnForSourceSlot(sourceSlot);
+    if (targetColumn == 0)
+    {
+      haltWithRedBlink(F("  [설정 오류] source slot 열 판정 실패"),
+                       F("  MissionConfig.h의 upperRowSlots/lowerRowSlots 값을 확인하세요."));
+    }
 
     printPixyRecognitionMode(F("  [스토리지 signature 필터]"), targetSigmap);
 
@@ -1783,6 +1978,8 @@ void step5_pickAndPlace()
     DEBUG_SERIAL.print(targetSig);
     DEBUG_SERIAL.print(F(", StorageSlot "));
     DEBUG_SERIAL.print(sourceSlot);
+    DEBUG_SERIAL.print(F(", Column "));
+    DEBUG_SERIAL.print(targetColumn);
     DEBUG_SERIAL.print(F(" -> Zone "));
     DEBUG_SERIAL.print(goalPos);
     DEBUG_SERIAL.println(F(" ==="));
@@ -1795,30 +1992,22 @@ void step5_pickAndPlace()
 
     bool found = false;
     bool skipCurrentBlock = false;
-    unsigned long perSlotScanMs = min((unsigned long)CFG.timeout.scanPhaseMs,
-                                      (unsigned long)CFG.storageRack.perSlotScanMs);
-    uint8_t allowedRegionMask = storagePickupRegionMaskForSlot(sourceSlot);
-    if (allowedRegionMask == 0)
+    if (!moveStorageToColumn(&currentStorageColumn, targetColumn))
     {
-      haltWithRedBlink(F("  [설정 오류] source slot에 맞는 pickup region 없음"),
-                       F("  MissionConfig.h의 storagePickupRegion 설정을 확인하세요."));
+      skipCurrentBlock = true;
+      DEBUG_SERIAL.println(F("  [스킵] 목표 열 이동 실패"));
     }
-
-    // ─── Phase 1: FR PSD로 우측 이동하며 탐색 ───
-    DEBUG_SERIAL.println(F("  [Phase 1] FR PSD 우측 스캔..."));
-    int16_t frVal;
-    unsigned long t0 = millis();
-    do
+    else
     {
-      // 카메라 x/y로 목표 적재함 slot 블록 확인
       int16_t blockX = 0;
       int16_t blockY = 0;
       uint8_t blockSig = 0;
       uint8_t pickupRegion = 0;
-      if (readBestBlockInStoragePickupRegions(allowedRegionMask,
-                                              targetSigmap,
-                                              &blockX, &blockY,
-                                              &blockSig, &pickupRegion))
+      if (scanCurrentStorageColumnForTarget(sourceSlot,
+                                            targetSigmap,
+                                            currentStorageColumn,
+                                            &blockX, &blockY,
+                                            &blockSig, &pickupRegion))
       {
         DEBUG_SERIAL.print(F("  목표 영역 감지 sig="));
         DEBUG_SERIAL.print(blockSig);
@@ -1828,82 +2017,13 @@ void step5_pickAndPlace()
         DEBUG_SERIAL.print(blockY);
         DEBUG_SERIAL.print(F(" region="));
         DEBUG_SERIAL.println(pickupRegion);
+
         bool picked = fineTuneAndPickStorageSlot(sourceSlot, targetSigmap);
         if (!picked && storageGripAlignTimedOut)
-        {
           skipCurrentBlock = true;
-          break;
-        }
         if (picked && placeAtZone(goalPos))
-        {
           found = true;
-          break;
-        }
       }
-
-      GetValueFromFrontRightPSDSensor(&frVal);
-
-      if (millis() - t0 > perSlotScanMs)
-      {
-        DEBUG_SERIAL.println(F("  [Phase 1] 칸 스캔 타임아웃"));
-        SetMobileGoalVelocityForSyncWrite(dxl, 0, 0, 0, 0);
-        break;
-      }
-    } while (DriveUntilNoObstacleWithOneSensor(dxl, frVal, CFG.psd.storageScanFrNoObstacle,
-                                               DRIVE_DIRECTION_RIGHT,
-                                               CFG.speed.storageScanSpeed));
-    SetMobileGoalVelocityForSyncWrite(dxl, 0, 0, 0, 0);
-
-    // ─── Phase 2: SL PSD로 좌측 이동하며 탐색 ───
-    if (!found && !skipCurrentBlock)
-    {
-      DEBUG_SERIAL.println(F("  [Phase 2] SL PSD 좌측 스캔..."));
-      int16_t slVal;
-      t0 = millis();
-      do
-      {
-        int16_t blockX = 0;
-        int16_t blockY = 0;
-        uint8_t blockSig = 0;
-        uint8_t pickupRegion = 0;
-        if (readBestBlockInStoragePickupRegions(allowedRegionMask,
-                                                targetSigmap,
-                                                &blockX, &blockY,
-                                                &blockSig, &pickupRegion))
-        {
-          DEBUG_SERIAL.print(F("  목표 영역 감지 sig="));
-          DEBUG_SERIAL.print(blockSig);
-          DEBUG_SERIAL.print(F(" X="));
-          DEBUG_SERIAL.print(blockX);
-          DEBUG_SERIAL.print(F(" Y="));
-          DEBUG_SERIAL.print(blockY);
-          DEBUG_SERIAL.print(F(" region="));
-          DEBUG_SERIAL.println(pickupRegion);
-          bool picked = fineTuneAndPickStorageSlot(sourceSlot, targetSigmap);
-          if (!picked && storageGripAlignTimedOut)
-          {
-            skipCurrentBlock = true;
-            break;
-          }
-          if (picked && placeAtZone(goalPos))
-          {
-            found = true;
-            break;
-          }
-        }
-
-        GetValueFromSideLeftPSDSensor(&slVal);
-
-        if (millis() - t0 > perSlotScanMs)
-        {
-          DEBUG_SERIAL.println(F("  [Phase 2] 칸 스캔 타임아웃"));
-          SetMobileGoalVelocityForSyncWrite(dxl, 0, 0, 0, 0);
-          break;
-        }
-      } while (DriveWithOneSensor(dxl, slVal - CFG.psd.scanSl,
-                                  CFG.psd.scanSlTolerance, DRIVE_DIRECTION_LEFT,
-                                  CFG.speed.storageScanSpeed));
-      SetMobileGoalVelocityForSyncWrite(dxl, 0, 0, 0, 0);
     }
 
     if (found)
@@ -1917,7 +2037,7 @@ void step5_pickAndPlace()
     else if (skipCurrentBlock)
     {
       skippedBlockCount++;
-      DEBUG_SERIAL.println(F("  [스킵] 그립 목표창 정렬 시간이 초과되어 다음 블록으로 넘어갑니다."));
+      DEBUG_SERIAL.println(F("  [스킵] 열 이동 또는 그립 정렬 실패로 다음 블록으로 넘어갑니다."));
       setRGBLEDRed();
       delay(CFG.wait.blockFeedbackMs);
       setRGBLEDOff();
@@ -1945,6 +2065,7 @@ void step5_pickAndPlace()
     if (blockIdx < totalBlocks - 1)
     {
       realignToStorage();
+      currentStorageColumn = 1;
     }
   }
 

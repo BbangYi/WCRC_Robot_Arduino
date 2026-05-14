@@ -91,7 +91,11 @@ This version targets the WCRC logistics robot 2 sorting mission and keeps the fu
 - `CFG.storageGripTarget.alignStepMs`: `15`
 - `CFG.storageGripTarget.upperExtraForwardMm/lowerExtraForwardMm`: `8.0 / 5.0` at `60mm/s`
 - `CFG.storageRack.pickSlotOrder`: currently `1, 5, 2, 6, 3, 7, 4, 8`
-- `CFG.storageRack.perSlotScanMs`: `1800`; if one slot takes longer on the field, raise this toward `2500`
+- `CFG.storageRack.scanColumnStepMm`: `72.0`
+- `CFG.storageRack.scanColumnMoveMmPerSec`: `150`
+- `CFG.storageRack.scanFramesPerStop`: `5`
+- `CFG.storageRack.scanMinBlockArea`: `0`
+- `CFG.storageRack.perSlotScanMs`: `1800`; legacy fallback only. The main mission uses fixed column-step scans.
 - `CFG.storageRack.columnXCenters`: currently `70, 125, 180, 235`
 - `CFG.storageRack.columnXTolerance`: `35`
 - `CFG.storageDrive.firstForwardMm`: `450.0`

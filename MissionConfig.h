@@ -101,7 +101,11 @@ public:
     uint8_t lowerRowSlots[4] = {5, 6, 7, 8};
     uint8_t pickSlotOrder[8] = {1, 5, 2, 6, 3, 7, 4, 8};
     uint8_t pickSlotCount = 8;
-    uint16_t perSlotScanMs = 1800; // 한 칸/한 후보를 훑는 시간. 현장 테스트 후 1500~2500ms에서 조정한다.
+    uint16_t perSlotScanMs = 1800; // legacy fallback. 본 미션은 아래 열 단위 스캔값을 우선 사용한다.
+    float scanColumnStepMm = 72.0;
+    int32_t scanColumnMoveMmPerSec = 150;
+    uint8_t scanFramesPerStop = 5;
+    uint16_t scanMinBlockArea = 0;
 
     // 적재함 기준 위치에서 Pixy 화면에 보이는 각 열의 x 중심 후보.
     // MissionRouteTuner의 pixy storage lower로 현장 확인 후 조정한다.
