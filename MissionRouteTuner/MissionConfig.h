@@ -135,6 +135,12 @@ public:
     float upperExtraForwardMm = 8.0;
     float lowerExtraForwardMm = 5.0;
     int32_t extraForwardMmPerSec = 60;
+    float fineAlignGain = 0.45;
+    float fineAlignMinStepMm = 1.0;
+    float fineAlignMaxStepMm = 6.0;
+    float fineAlignForwardMaxStepMm = 3.0;
+    int32_t fineAlignSpeedMmPerSec = 35;
+    bool fineAlignUseY = true;
     bool yErrorUsesForwardDirection = true;
   };
 

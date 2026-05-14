@@ -70,6 +70,31 @@ uint8_t placedBlockCount = 0;
 uint8_t skippedBlockCount = 0;
 bool allDetectedBlocksPlaced = false;
 
+struct StorageDetection
+{
+  uint8_t signature;
+  uint8_t sourceSlot;
+  uint8_t column;
+  uint8_t pickupRegion;
+  int16_t x;
+  int16_t y;
+  uint32_t area;
+  bool assigned;
+};
+
+struct MissionPickTask
+{
+  uint8_t signature;
+  uint8_t sourceSlot;
+  uint8_t goalSlot;
+  uint8_t column;
+  uint8_t pickupRegion;
+  int16_t x;
+  int16_t y;
+  uint32_t area;
+  bool found;
+};
+
 int32_t clampInt32(int32_t value, int32_t minValue, int32_t maxValue)
 {
   if (value < minValue)
@@ -902,10 +927,15 @@ void validateMissionConfig()
       CFG.storageGripTarget.lowerExtraForwardMm < 0.0 ||
       CFG.storageGripTarget.upperExtraForwardMm > 80.0 ||
       CFG.storageGripTarget.lowerExtraForwardMm > 80.0 ||
-      CFG.storageGripTarget.extraForwardMmPerSec <= 0)
+      CFG.storageGripTarget.extraForwardMmPerSec <= 0 ||
+      CFG.storageGripTarget.fineAlignGain <= 0.0 ||
+      CFG.storageGripTarget.fineAlignMinStepMm <= 0.0 ||
+      CFG.storageGripTarget.fineAlignMaxStepMm < CFG.storageGripTarget.fineAlignMinStepMm ||
+      CFG.storageGripTarget.fineAlignForwardMaxStepMm < 0.0 ||
+      CFG.storageGripTarget.fineAlignSpeedMmPerSec <= 0)
   {
     haltWithRedBlink(F("  [설정 오류] grip target 정렬값 오류"),
-                     F("  storageGripTarget margin/timeout/step/depth 값을 확인하세요."));
+                     F("  storageGripTarget margin/timeout/step/depth/fineAlign 값을 확인하세요."));
   }
 
   if (CFG.poseTiming.upperGripStageMs == 0 ||
@@ -1227,12 +1257,13 @@ void step3_scan()
   totalBlocks = min(totalBlocks, CFG.storageRack.pickSlotCount);
   totalBlocks = min(totalBlocks, CFG.pose.missionZoneSlotCount);
 
-  // 결과 저장: i번째 미션지시존 블록 → i번째 적재함 물리 칸에서 집고 → 발표된 수행존 칸에 배치
+  // 결과 저장: 미션지시존은 처리할 signature 목록만 만든다.
+  // 실제 source/goal slot은 적재함 전체 survey에서 발견한 위치를 사용한다.
   for (int i = 0; i < totalBlocks; i++)
   {
     targetSigs[i] = bestBlockSig[i];
-    goalPositions[i] = CFG.mission.goalPositions[i]; // 사전 설정된 칸 번호
-    sourceSlots[i] = CFG.storageRack.pickSlotOrder[i];
+    goalPositions[i] = 0;
+    sourceSlots[i] = 0;
   }
 
   // 스캔 결과 출력
@@ -1244,10 +1275,7 @@ void step3_scan()
     DEBUG_SERIAL.print(i);
     DEBUG_SERIAL.print(F("] Sig"));
     DEBUG_SERIAL.print(targetSigs[i]);
-    DEBUG_SERIAL.print(F(", StorageSlot "));
-    DEBUG_SERIAL.print(sourceSlots[i]);
-    DEBUG_SERIAL.print(F(" -> Zone "));
-    DEBUG_SERIAL.println(goalPositions[i]);
+    DEBUG_SERIAL.println(F(", source/zone=pending storage survey"));
   }
 }
 
@@ -1543,6 +1571,307 @@ bool scanCurrentStorageColumnForTarget(uint8_t sourceSlot,
   return true;
 }
 
+uint8_t sourceSlotForStorageColumnAndRegion(uint8_t column, uint8_t pickupRegion)
+{
+  if (column < 1 || column > 4 || pickupRegion == 0)
+    return 0;
+  return storagePickupRegionUsesUpperGrip(pickupRegion)
+           ? CFG.storageRack.upperRowSlots[column - 1]
+           : CFG.storageRack.lowerRowSlots[column - 1];
+}
+
+uint8_t missionTargetSignatureMap()
+{
+  uint8_t signatureMap = 0;
+  for (uint8_t i = 0; i < totalBlocks; i++)
+  {
+    signatureMap |= getStorageTargetSignatureMap(targetSigs[i]);
+  }
+  return signatureMap;
+}
+
+uint8_t neededMissionTargetCountForSignature(uint8_t signature)
+{
+  uint8_t count = 0;
+  for (uint8_t i = 0; i < totalBlocks; i++)
+  {
+    if (targetSigs[i] == signature)
+      count++;
+  }
+  return count;
+}
+
+uint8_t storageDetectionCountForSignature(StorageDetection detections[],
+                                          uint8_t detectionCount,
+                                          uint8_t signature)
+{
+  uint8_t count = 0;
+  for (uint8_t i = 0; i < detectionCount; i++)
+  {
+    if (detections[i].signature == signature)
+      count++;
+  }
+  return count;
+}
+
+bool storageSurveyCoversMissionTargets(StorageDetection detections[],
+                                       uint8_t detectionCount)
+{
+  for (uint8_t i = 0; i < totalBlocks; i++)
+  {
+    uint8_t signature = targetSigs[i];
+    if (storageDetectionCountForSignature(detections, detectionCount, signature) <
+        neededMissionTargetCountForSignature(signature))
+      return false;
+  }
+  return totalBlocks > 0;
+}
+
+bool upsertStorageDetection(StorageDetection detections[],
+                            uint8_t *detectionCount,
+                            uint8_t signature,
+                            uint8_t sourceSlot,
+                            uint8_t column,
+                            uint8_t pickupRegion,
+                            int16_t x,
+                            int16_t y,
+                            uint32_t area)
+{
+  for (uint8_t i = 0; i < *detectionCount; i++)
+  {
+    if (detections[i].signature == signature &&
+        detections[i].sourceSlot == sourceSlot)
+    {
+      if (area > detections[i].area)
+      {
+        detections[i].pickupRegion = pickupRegion;
+        detections[i].x = x;
+        detections[i].y = y;
+        detections[i].area = area;
+      }
+      return true;
+    }
+  }
+
+  if (*detectionCount >= MissionConfig::MAX_MISSION_BLOCKS)
+    return false;
+
+  StorageDetection &detection = detections[*detectionCount];
+  detection.signature = signature;
+  detection.sourceSlot = sourceSlot;
+  detection.column = column;
+  detection.pickupRegion = pickupRegion;
+  detection.x = x;
+  detection.y = y;
+  detection.area = area;
+  detection.assigned = false;
+  (*detectionCount)++;
+  return true;
+}
+
+void printStorageDetectionJson(const StorageDetection &detection)
+{
+  DEBUG_SERIAL.print(F("{\"type\":\"storage-survey-detection\",\"sig\":"));
+  DEBUG_SERIAL.print(detection.signature);
+  DEBUG_SERIAL.print(F(",\"sourceSlot\":"));
+  DEBUG_SERIAL.print(detection.sourceSlot);
+  DEBUG_SERIAL.print(F(",\"goalSlot\":"));
+  DEBUG_SERIAL.print(detection.sourceSlot);
+  DEBUG_SERIAL.print(F(",\"column\":"));
+  DEBUG_SERIAL.print(detection.column);
+  DEBUG_SERIAL.print(F(",\"layer\":\""));
+  DEBUG_SERIAL.print(storagePickupRegionUsesUpperGrip(detection.pickupRegion) ? F("upper") : F("lower"));
+  DEBUG_SERIAL.print(F("\",\"x\":"));
+  DEBUG_SERIAL.print(detection.x);
+  DEBUG_SERIAL.print(F(",\"y\":"));
+  DEBUG_SERIAL.print(detection.y);
+  DEBUG_SERIAL.print(F(",\"area\":"));
+  DEBUG_SERIAL.print(detection.area);
+  DEBUG_SERIAL.println(F("}"));
+}
+
+bool surveyCurrentStorageColumn(StorageDetection detections[],
+                                uint8_t *detectionCount,
+                                uint8_t column,
+                                uint8_t signatureMap)
+{
+  uint8_t frames = constrain(CFG.storageRack.scanFramesPerStop, 1, 20);
+  bool foundAny = false;
+
+  DEBUG_SERIAL.print(F("[storage survey] column="));
+  DEBUG_SERIAL.print(column);
+  DEBUG_SERIAL.print(F(", frames="));
+  DEBUG_SERIAL.print(frames);
+  DEBUG_SERIAL.print(F(", minArea="));
+  DEBUG_SERIAL.println(CFG.storageRack.scanMinBlockArea);
+
+  for (uint8_t frame = 0; frame < frames; frame++)
+  {
+    pixy.ccc.getBlocks(true, signatureMap);
+    DEBUG_SERIAL.print(F("  frame "));
+    DEBUG_SERIAL.print(frame + 1);
+    DEBUG_SERIAL.print(F(": count="));
+    DEBUG_SERIAL.println(pixy.ccc.numBlocks);
+
+    for (uint8_t i = 0; i < pixy.ccc.numBlocks; i++)
+    {
+      if (!pixyBlockPassesFilter(i, signatureMap,
+                                 CFG.storageRack.scanMinBlockArea))
+        continue;
+
+      int16_t x = pixy.ccc.blocks[i].m_x;
+      int16_t y = pixy.ccc.blocks[i].m_y;
+      uint8_t pickupRegion = storagePickupRegionForPixyXY(x, y);
+      if (pickupRegion == 0)
+        continue;
+
+      uint8_t sourceSlot = sourceSlotForStorageColumnAndRegion(column, pickupRegion);
+      if (sourceSlot == 0)
+        continue;
+
+      uint8_t signature = pixy.ccc.blocks[i].m_signature;
+      uint32_t area = pixyBlockArea(i);
+      if (upsertStorageDetection(detections, detectionCount, signature,
+                                 sourceSlot, column, pickupRegion, x, y, area))
+      {
+        foundAny = true;
+      }
+    }
+    delay(CFG.wait.scanSampleMs);
+  }
+
+  for (uint8_t i = 0; i < *detectionCount; i++)
+  {
+    if (detections[i].column == column)
+      printStorageDetectionJson(detections[i]);
+  }
+  return foundAny;
+}
+
+bool runStorageSurvey(StorageDetection detections[],
+                      uint8_t *detectionCount,
+                      uint8_t *currentColumn)
+{
+  *detectionCount = 0;
+  uint8_t signatureMap = missionTargetSignatureMap();
+  if (signatureMap == 0)
+    return false;
+
+  printPixyRecognitionMode(F("[storage survey] target"), signatureMap);
+
+  for (uint8_t column = 1; column <= 4; column++)
+  {
+    if (!moveStorageToColumn(currentColumn, column))
+      return false;
+    surveyCurrentStorageColumn(detections, detectionCount, column, signatureMap);
+    if (storageSurveyCoversMissionTargets(detections, *detectionCount))
+    {
+      DEBUG_SERIAL.println(F("[storage survey] 목표 signature를 모두 찾았습니다. 남은 열 스캔을 생략합니다."));
+      return true;
+    }
+  }
+
+  DEBUG_SERIAL.println(F("[storage survey] 4열까지 스캔 완료"));
+  return *detectionCount > 0;
+}
+
+int16_t taskDistanceScore(uint8_t currentColumn, const StorageDetection &detection)
+{
+  return abs((int)detection.column - (int)currentColumn);
+}
+
+uint8_t firstUnassignedTargetIndexForSignature(bool targetAssigned[], uint8_t signature)
+{
+  for (uint8_t i = 0; i < totalBlocks; i++)
+  {
+    if (!targetAssigned[i] && targetSigs[i] == signature)
+      return i;
+  }
+  return MissionConfig::MAX_MISSION_BLOCKS;
+}
+
+uint8_t buildMissionPickTasks(StorageDetection detections[],
+                              uint8_t detectionCount,
+                              MissionPickTask tasks[],
+                              uint8_t startColumn)
+{
+  bool targetAssigned[MissionConfig::MAX_MISSION_BLOCKS] = {false};
+  uint8_t taskCount = 0;
+  uint8_t currentColumn = startColumn;
+
+  for (uint8_t i = 0; i < detectionCount; i++)
+    detections[i].assigned = false;
+
+  while (taskCount < totalBlocks)
+  {
+    uint8_t bestDetection = MissionConfig::MAX_MISSION_BLOCKS;
+    uint8_t bestTarget = MissionConfig::MAX_MISSION_BLOCKS;
+    int16_t bestDistance = 32767;
+    uint32_t bestArea = 0;
+
+    for (uint8_t i = 0; i < detectionCount; i++)
+    {
+      if (detections[i].assigned)
+        continue;
+      uint8_t targetIndex = firstUnassignedTargetIndexForSignature(targetAssigned,
+                                                                   detections[i].signature);
+      if (targetIndex >= MissionConfig::MAX_MISSION_BLOCKS)
+        continue;
+
+      int16_t distance = taskDistanceScore(currentColumn, detections[i]);
+      if (bestDetection >= MissionConfig::MAX_MISSION_BLOCKS ||
+          distance < bestDistance ||
+          (distance == bestDistance && detections[i].area > bestArea))
+      {
+        bestDetection = i;
+        bestTarget = targetIndex;
+        bestDistance = distance;
+        bestArea = detections[i].area;
+      }
+    }
+
+    if (bestDetection >= MissionConfig::MAX_MISSION_BLOCKS)
+      break;
+
+    StorageDetection &detection = detections[bestDetection];
+    detection.assigned = true;
+    targetAssigned[bestTarget] = true;
+
+    MissionPickTask &task = tasks[taskCount++];
+    task.signature = detection.signature;
+    task.sourceSlot = detection.sourceSlot;
+    task.goalSlot = detection.sourceSlot;
+    task.column = detection.column;
+    task.pickupRegion = detection.pickupRegion;
+    task.x = detection.x;
+    task.y = detection.y;
+    task.area = detection.area;
+    task.found = true;
+
+    DEBUG_SERIAL.print(F("{\"type\":\"mission-pick-task\",\"index\":"));
+    DEBUG_SERIAL.print(taskCount);
+    DEBUG_SERIAL.print(F(",\"sig\":"));
+    DEBUG_SERIAL.print(task.signature);
+    DEBUG_SERIAL.print(F(",\"sourceSlot\":"));
+    DEBUG_SERIAL.print(task.sourceSlot);
+    DEBUG_SERIAL.print(F(",\"goalSlot\":"));
+    DEBUG_SERIAL.print(task.goalSlot);
+    DEBUG_SERIAL.print(F(",\"poseId\":"));
+    DEBUG_SERIAL.print(missionZonePoseIdForGoal(task.goalSlot));
+    DEBUG_SERIAL.print(F(",\"column\":"));
+    DEBUG_SERIAL.print(task.column);
+    DEBUG_SERIAL.print(F(",\"layer\":\""));
+    DEBUG_SERIAL.print(storagePickupRegionUsesUpperGrip(task.pickupRegion) ? F("upper") : F("lower"));
+    DEBUG_SERIAL.println(F("\"}"));
+
+    // 첫 집기는 survey가 끝난 현재 열을 기준으로 고르고,
+    // 이후 집기는 배치 후 적재함 기준 위치(1열)로 돌아온다고 본다.
+    currentColumn = 1;
+  }
+
+  return taskCount;
+}
+
 void step4_alignToStorage()
 {
   DEBUG_SERIAL.println(F(""));
@@ -1639,54 +1968,92 @@ bool waitForMobilePositionOrTimeout(unsigned long timeoutMs,
 }
 
 // ============================================================
-//  5단계 헬퍼: 적재함에서 블록 집기 (2페이즈 스캔)
+//  5단계 헬퍼: 적재함 survey, 저속 중심 정렬, 집기
 // ============================================================
 
 /*
  * 카메라에 목표 적재함 slot 블록이 잡혔을 때 미세조정 → 상/하층 판별 → 집기까지 수행
  * 반환: true=집기 성공, false=실패
  */
-int32_t cameraFineTuneSignedVelocityForError(int16_t error, int16_t tolerance)
+float fineAlignMmPerPixelX()
 {
-  int16_t absError = abs(error);
-  if (absError <= tolerance)
-    return 0;
+  int32_t pixelSum = 0;
+  uint8_t gapCount = 0;
+  for (uint8_t i = 0; i < 3; i++)
+  {
+    int16_t gap = abs(CFG.storageRack.columnXCenters[i + 1] -
+                      CFG.storageRack.columnXCenters[i]);
+    if (gap > 0)
+    {
+      pixelSum += gap;
+      gapCount++;
+    }
+  }
+  if (gapCount == 0 || pixelSum == 0)
+    return 1.0;
+  float avgPixelGap = (float)pixelSum / (float)gapCount;
+  return CFG.storageRack.scanColumnStepMm / avgPixelGap;
+}
 
-  int32_t maxSpeed = CFG.speed.cameraFineTuneSpeed;
-  int32_t minSpeed = maxSpeed / 4;
-  if (minSpeed < 25)
-    minSpeed = 25;
-  if (minSpeed > maxSpeed)
-    minSpeed = maxSpeed;
+float clampFineAlignDistance(float value, float minValue, float maxValue)
+{
+  if (value < minValue)
+    return minValue;
+  if (value > maxValue)
+    return maxValue;
+  return value;
+}
 
-  int16_t fullSpeedError = CFG.storageGripTarget.alignFullSpeedPixelError;
-  if (fullSpeedError <= tolerance)
-    fullSpeedError = tolerance + 1;
+float fineAlignDistanceForPixelError(int16_t error, float maxStepMm)
+{
+  float distanceMm = (float)abs(error) *
+                     fineAlignMmPerPixelX() *
+                     CFG.storageGripTarget.fineAlignGain;
+  return clampFineAlignDistance(distanceMm,
+                                CFG.storageGripTarget.fineAlignMinStepMm,
+                                maxStepMm);
+}
 
-  int32_t numerator = (int32_t)(absError - tolerance);
-  int32_t denominator = (int32_t)(fullSpeedError - tolerance);
-  int32_t speed = minSpeed + ((maxSpeed - minSpeed) * numerator) / denominator;
-  if (speed > maxSpeed)
-    speed = maxSpeed;
-  return error > 0 ? speed : -speed;
+bool driveFineAlignDistance(uint8_t direction, float distanceMm)
+{
+  if (distanceMm <= 0.0)
+    return true;
+  ChangeMobilebaseMode2ExtendedPositionControlWithTimeBasedProfileMode(dxl);
+  DriveDistanceAndMmPerSecAndDirection(dxl, distanceMm, direction,
+                                       CFG.storageGripTarget.fineAlignSpeedMmPerSec);
+  bool ok = waitForMobilePositionOrTimeout(CFG.timeout.positionMoveMs,
+                                           F("    fine align 이동 타임아웃"));
+  ChangeMobilebaseMode2VelocityControlMode(dxl);
+  SetMobileGoalVelocityForSyncWrite(dxl, 0, 0, 0, 0);
+  return ok;
 }
 
 bool stepCameraGripAlignment(int16_t xError, int16_t yError)
 {
-  int32_t sideVelocity = cameraFineTuneSignedVelocityForError(
-    xError, CFG.storageGripTarget.centerToleranceX);
-  int32_t forwardVelocity = cameraFineTuneSignedVelocityForError(
-    yError, CFG.storageGripTarget.centerToleranceY);
-  if (!CFG.storageGripTarget.yErrorUsesForwardDirection)
-    forwardVelocity = -forwardVelocity;
+  if (abs(xError) > CFG.storageGripTarget.centerToleranceX)
+  {
+    float sideStepMm = fineAlignDistanceForPixelError(
+      xError, CFG.storageGripTarget.fineAlignMaxStepMm);
+    uint8_t direction = (xError > 0) ? DRIVE_DIRECTION_RIGHT : DRIVE_DIRECTION_LEFT;
+    DEBUG_SERIAL.print(F("    fine align X "));
+    DEBUG_SERIAL.print(sideStepMm, 2);
+    DEBUG_SERIAL.println(direction == DRIVE_DIRECTION_RIGHT ? F("mm right") : F("mm left"));
+    return driveFineAlignDistance(direction, sideStepMm);
+  }
 
-  SetMobileGoalVelocityForSyncWrite(
-    dxl,
-    (-forwardVelocity + sideVelocity) / 2,
-    (-forwardVelocity - sideVelocity) / 2,
-    (-forwardVelocity - sideVelocity) / 2,
-    (-forwardVelocity + sideVelocity) / 2);
-  delay(CFG.storageGripTarget.alignStepMs);
+  if (CFG.storageGripTarget.fineAlignUseY &&
+      abs(yError) > CFG.storageGripTarget.centerToleranceY)
+  {
+    float forwardStepMm = fineAlignDistanceForPixelError(
+      yError, CFG.storageGripTarget.fineAlignForwardMaxStepMm);
+    bool forward = (yError > 0) == CFG.storageGripTarget.yErrorUsesForwardDirection;
+    uint8_t direction = forward ? DRIVE_DIRECTION_FORWARD : DRIVE_DIRECTION_BACKWARD;
+    DEBUG_SERIAL.print(F("    fine align Y "));
+    DEBUG_SERIAL.print(forwardStepMm, 2);
+    DEBUG_SERIAL.println(forward ? F("mm forward") : F("mm backward"));
+    return driveFineAlignDistance(direction, forwardStepMm);
+  }
+
   return true;
 }
 
@@ -1926,7 +2293,7 @@ void step5_pickAndPlace()
 {
   DEBUG_SERIAL.println(F(""));
   DEBUG_SERIAL.println(F("========================================"));
-  DEBUG_SERIAL.println(F(" [5단계] 집기 & 배치 루프"));
+  DEBUG_SERIAL.println(F(" [5단계] 적재함 전체 스캔 -> 집기 & 배치"));
   DEBUG_SERIAL.println(F("========================================"));
 
   if (totalBlocks == 0)
@@ -1939,20 +2306,48 @@ void step5_pickAndPlace()
   skippedBlockCount = 0;
   allDetectedBlocksPlaced = false;
   ChangeMobilebaseMode2VelocityControlMode(dxl);
-  uint8_t currentStorageColumn = 1;
 
-  for (int blockIdx = 0; blockIdx < totalBlocks; blockIdx++)
+  // STORAGE 자세 + 카메라 램프 확인
+  runTimedManipulatorPose(STORAGE, CFG.poseTiming.storageMs, 0.0,
+                          F("  적재함 스캔 전 3번 안전 이동 자세가 필요합니다."));
+  pixy.setLamp(1, 1);
+  delay(CFG.wait.cameraLampMs);
+
+  uint8_t currentStorageColumn = 1;
+  static StorageDetection detections[MissionConfig::MAX_MISSION_BLOCKS];
+  static MissionPickTask tasks[MissionConfig::MAX_MISSION_BLOCKS];
+  uint8_t detectionCount = 0;
+  uint8_t requestedBlockCount = totalBlocks;
+
+  if (!runStorageSurvey(detections, &detectionCount, &currentStorageColumn))
   {
-    uint8_t targetSig = targetSigs[blockIdx];
-    uint8_t sourceSlot = sourceSlots[blockIdx];
-    uint8_t goalPos = goalPositions[blockIdx];
+    skippedBlockCount = requestedBlockCount;
+    DEBUG_SERIAL.println(F("  [스킵] 적재함 survey에서 목표 signature를 찾지 못했습니다."));
+    return;
+  }
+
+  uint8_t taskCount = buildMissionPickTasks(detections, detectionCount,
+                                            tasks, currentStorageColumn);
+  if (taskCount < requestedBlockCount)
+  {
+    skippedBlockCount += requestedBlockCount - taskCount;
+    DEBUG_SERIAL.print(F("  [주의] 미션지시존 target 중 survey에서 못 찾은 개수="));
+    DEBUG_SERIAL.println(requestedBlockCount - taskCount);
+  }
+  if (taskCount == 0)
+  {
+    DEBUG_SERIAL.println(F("  [스킵] 실행 가능한 집기 task가 없습니다."));
+    return;
+  }
+
+  for (uint8_t taskIdx = 0; taskIdx < taskCount; taskIdx++)
+  {
+    MissionPickTask &task = tasks[taskIdx];
+    uint8_t targetSig = task.signature;
+    uint8_t sourceSlot = task.sourceSlot;
+    uint8_t goalPos = task.goalSlot;
     uint8_t targetSigmap = getStorageTargetSignatureMap(targetSig);
 
-    if (sourceSlot < 1 || sourceSlot > 8)
-    {
-      haltWithRedBlink(F("  [설정 오류] 적재함 source slot 범위 오류"),
-                       F("  MissionConfig.h의 pickSlotOrder 값은 1~8이어야 합니다."));
-    }
     if (targetSigmap == 0)
     {
       DEBUG_SERIAL.print(F("  [정지] 스토리지 signature 필터에서 Sig"));
@@ -1961,38 +2356,26 @@ void step5_pickAndPlace()
       haltWithRedBlink(F("  [설정 오류] 스토리지 signature 필터 오류"),
                        F("  MissionConfig.h의 storageAllowedSignatureMap/Pixy signature를 확인하세요."));
     }
-    uint8_t targetColumn = storageColumnForSourceSlot(sourceSlot);
-    if (targetColumn == 0)
-    {
-      haltWithRedBlink(F("  [설정 오류] source slot 열 판정 실패"),
-                       F("  MissionConfig.h의 upperRowSlots/lowerRowSlots 값을 확인하세요."));
-    }
 
     printPixyRecognitionMode(F("  [스토리지 signature 필터]"), targetSigmap);
 
     DEBUG_SERIAL.print(F("\n  === 블록 "));
-    DEBUG_SERIAL.print(blockIdx + 1);
+    DEBUG_SERIAL.print(taskIdx + 1);
     DEBUG_SERIAL.print(F("/"));
-    DEBUG_SERIAL.print(totalBlocks);
+    DEBUG_SERIAL.print(taskCount);
     DEBUG_SERIAL.print(F(": Sig"));
     DEBUG_SERIAL.print(targetSig);
     DEBUG_SERIAL.print(F(", StorageSlot "));
     DEBUG_SERIAL.print(sourceSlot);
     DEBUG_SERIAL.print(F(", Column "));
-    DEBUG_SERIAL.print(targetColumn);
+    DEBUG_SERIAL.print(task.column);
     DEBUG_SERIAL.print(F(" -> Zone "));
     DEBUG_SERIAL.print(goalPos);
     DEBUG_SERIAL.println(F(" ==="));
 
-    // STORAGE 자세 + 카메라 램프 확인
-    runTimedManipulatorPose(STORAGE, CFG.poseTiming.storageMs, 0.0,
-                            F("  적재함 스캔 전 3번 안전 이동 자세가 필요합니다."));
-    pixy.setLamp(1, 1);
-    delay(CFG.wait.cameraLampMs);
-
     bool found = false;
     bool skipCurrentBlock = false;
-    if (!moveStorageToColumn(&currentStorageColumn, targetColumn))
+    if (!moveStorageToColumn(&currentStorageColumn, task.column))
     {
       skipCurrentBlock = true;
       DEBUG_SERIAL.println(F("  [스킵] 목표 열 이동 실패"));
@@ -2062,14 +2445,14 @@ void step5_pickAndPlace()
     }
 
     // 다음 블록을 위해 적재함 재정렬
-    if (blockIdx < totalBlocks - 1)
+    if (taskIdx < taskCount - 1)
     {
       realignToStorage();
       currentStorageColumn = 1;
     }
   }
 
-  allDetectedBlocksPlaced = (placedBlockCount == totalBlocks && totalBlocks > 0);
+  allDetectedBlocksPlaced = (placedBlockCount == requestedBlockCount && requestedBlockCount > 0);
   DEBUG_SERIAL.println(F(""));
   if (allDetectedBlocksPlaced)
   {
@@ -2081,7 +2464,7 @@ void step5_pickAndPlace()
     DEBUG_SERIAL.print(F("  배치 완료 수="));
     DEBUG_SERIAL.print(placedBlockCount);
     DEBUG_SERIAL.print(F("/"));
-    DEBUG_SERIAL.print(totalBlocks);
+    DEBUG_SERIAL.print(requestedBlockCount);
     DEBUG_SERIAL.print(F(", 스킵="));
     DEBUG_SERIAL.println(skippedBlockCount);
     DEBUG_SERIAL.println(F("  일부 블록은 미배치 상태입니다. 현재 위치 기준으로 안전 복귀합니다."));

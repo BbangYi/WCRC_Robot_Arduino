@@ -90,7 +90,11 @@ This version targets the WCRC logistics robot 2 sorting mission and keeps the fu
 - `CFG.storageGripTarget.alignTimeoutMs`: `5000`
 - `CFG.storageGripTarget.alignStepMs`: `15`
 - `CFG.storageGripTarget.upperExtraForwardMm/lowerExtraForwardMm`: `8.0 / 5.0` at `60mm/s`
-- `CFG.storageRack.pickSlotOrder`: currently `1, 5, 2, 6, 3, 7, 4, 8`
+- `CFG.storageGripTarget.fineAlignGain`: `0.45`
+- `CFG.storageGripTarget.fineAlignMinStepMm/fineAlignMaxStepMm`: `1.0 / 6.0`
+- `CFG.storageGripTarget.fineAlignForwardMaxStepMm`: `3.0`
+- `CFG.storageGripTarget.fineAlignSpeedMmPerSec`: `35`
+- `CFG.storageRack.pickSlotOrder`: legacy fallback/debug order, currently `1, 5, 2, 6, 3, 7, 4, 8`
 - `CFG.storageRack.scanColumnStepMm`: `72.0`
 - `CFG.storageRack.scanColumnMoveMmPerSec`: `150`
 - `CFG.storageRack.scanFramesPerStop`: `5`
@@ -121,13 +125,14 @@ Storage-rack numbering is fixed and documented in `PROJECT_RULES.md`.
 5  6  7  8
 ```
 
-Current pick logic scans the storage rack with Pixy2, checks whether each visible block center is inside one of the configured pickup regions, nudges the mobile base until the block enters a configured grip target window, and picks in `CFG.storageRack.pickSlotOrder`.
-The current field-test run supports eight blocks: source slots `1, 5, 2, 6, 3, 7, 4, 8`, then mission-zone placements `1~8`.
+Current pick logic first surveys the storage rack from column 1 to 4, records every target block as `signature/sourceSlot/column/layer/x/y/area`, then builds a pick/place queue from the mission-instruction signatures. The mission-zone destination uses the detected storage slot directly: `goalSlot = sourceSlot`.
+The current field-test run supports eight destination slots. Slot `1~8` maps to EEPROM pose `7~14`, so `poseId = 6 + slot`. For example, storage column 3 lower is `sourceSlot=7`, `goalSlot=7`, and EEPROM pose `13`.
+`CFG.storageRack.pickSlotOrder` is retained as a legacy fallback/debug contract, but the autonomous mission no longer treats it as the real source position list.
 Storage picking now requires both the mission-instruction signature and the configured pickup region to match before gripping.
 If a mission-instruction scan sees zero blocks, the robot skips storage picking and returns instead of retrying forever.
-If one configured storage slot is not recognized during its scan window, that block is logged as skipped and the loop advances to the next source slot.
+If the storage survey cannot match one of the requested signatures, that block is logged as skipped and the loop advances without repeating the same search forever.
 After all detected signatures are placed, the robot does not re-align to the storage rack; it starts the finish reverse from the current mission-zone position.
-Use `MissionRouteTuner` command `pixy storage lower 10 0` first to verify lower pickup regions, then `pixy align lower 5000 0` to measure how long region-to-target movement takes.
+Use `MissionRouteTuner` command `mission survey`, then `mission plan` to inspect the detected queue. Use `pixy alignslow lower 5000 0` to test the same low-speed micro-step center alignment used by the main mission.
 
 Upper-row gripping uses a staged joint order `m4 -> m3 -> m2` for the upper grip pose and the lift back to storage. This is intentionally slower than a single sync move because it reduces RFID-card interference while lifting the block.
 

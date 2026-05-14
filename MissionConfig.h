@@ -154,6 +154,12 @@ public:
     float upperExtraForwardMm = 8.0;
     float lowerExtraForwardMm = 5.0;
     int32_t extraForwardMmPerSec = 60;
+    float fineAlignGain = 0.45;
+    float fineAlignMinStepMm = 1.0;
+    float fineAlignMaxStepMm = 6.0;
+    float fineAlignForwardMaxStepMm = 3.0;
+    int32_t fineAlignSpeedMmPerSec = 35;
+    bool fineAlignUseY = true;
 
     // yError 양수일 때 사용할 기준 축. 현장에서 반대로 움직이면 false로 바꾼다.
     bool yErrorUsesForwardDirection = true;

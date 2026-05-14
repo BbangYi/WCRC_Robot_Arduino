@@ -61,11 +61,13 @@ SW1             # finish 후진
 - `mission rescan`: 미션지시존 Pixy queue를 다시 구성하고 이동하지 않습니다.
 - `mission accept`: 스캔 queue를 수락하고 다음 SW1에서 적재함 이동을 허용합니다.
 - `mission button on/off`: SW1 단계 진행 수동 토글입니다. `mission start`가 자동으로 ON 처리합니다.
-- 기본 queue는 미션지시존 Pixy 스캔 결과를 기반으로 구성하고, source 순회는 `CFG.storageRack.pickSlotOrder`, 배치는 `CFG.mission.goalPositions`를 사용합니다.
+- 기본 queue는 미션지시존 Pixy 스캔 결과를 기반으로 구성합니다. `mission survey`는 적재함 1~4열을 훑어 `signature/sourceSlot/column/layer/x/y/area`를 기록하고, `mission plan`은 `sourceSlot = goalSlot` 계약으로 실행 queue를 적용합니다.
+- slot `1~8`은 EEPROM pose `7~14`에 대응하므로 `poseId = 6 + slot`입니다. 예를 들어 3열 하단은 `sourceSlot=7`, `goalSlot=7`, pose `13`입니다.
 - 적재함 열 이동은 `1/5 -> 2/6 -> 3/7 -> 4/8` 기준입니다. 한 번의 `mission next`는 최대 한 열만 이동하고 멈춥니다.
 - 현재 열 기준이 틀어졌으면 `mission column <1~4>`로 수동 보정합니다.
 - `mission columnstep <mm> <mm/s>`로 한 열 이동량과 속도를 현장에서 숫자로 테스트합니다.
 - `mission columnscan`으로 현재 열 Pixy storage 스캔을 실행하고 `signature/sourceSlot/goalSlot/pickLayer` 판정을 저장합니다.
+- `pixy alignslow upper|lower [timeoutMs] [minArea] [signatureMap]`은 Motor와 같은 저속 micro-step 중심 정렬을 단독 테스트합니다.
 - `mission align <sl> <fl> <fr> [tol]`은 적재함 1열을 처음 보는 스캔 기준 위치입니다. 현재 기본값은 `mission align 354 266 269 8`입니다.
 - `mission gripalign upper <sl> <fl> <fr> [tol]`은 상층 집기 직전 더 깊이 들어가는 기준 위치입니다. 현재 기본값은 `mission gripalign upper 359 349 363 8`입니다.
 - `mission gripalign lower <sl> <fl> <fr> [tol]`은 하층 집기 직전 기준 위치입니다. 현재 기본값은 `mission gripalign lower 354 325 337 8`입니다.
