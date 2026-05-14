@@ -859,6 +859,8 @@ void validateMissionConfig()
   if (CFG.psd.missionTolerance <= 0 ||
       CFG.psd.alignTolerance <= 0 ||
       CFG.psd.missionZoneTolerance <= 0 ||
+      CFG.psd.gripAlignTolerance <= 0 ||
+      CFG.psd.lowerGripAlignTolerance <= 0 ||
       CFG.psd.scanSlTolerance <= 0 ||
       CFG.cameraScan.storageXTolerance <= 0 ||
       CFG.storageRack.columnXTolerance <= 0 ||
@@ -887,11 +889,20 @@ void validateMissionConfig()
 
   if (CFG.storageGripTarget.xMargin < 0 ||
       CFG.storageGripTarget.yMargin < 0 ||
+      CFG.storageGripTarget.centerToleranceX <= 0 ||
+      CFG.storageGripTarget.centerToleranceY <= 0 ||
       CFG.storageGripTarget.alignTimeoutMs == 0 ||
-      CFG.storageGripTarget.alignStepMs == 0)
+      CFG.storageGripTarget.alignStepMs == 0 ||
+      CFG.storageGripTarget.alignFullSpeedPixelError <= CFG.storageGripTarget.centerToleranceX ||
+      CFG.storageGripTarget.alignFullSpeedPixelError <= CFG.storageGripTarget.centerToleranceY ||
+      CFG.storageGripTarget.upperExtraForwardMm < 0.0 ||
+      CFG.storageGripTarget.lowerExtraForwardMm < 0.0 ||
+      CFG.storageGripTarget.upperExtraForwardMm > 80.0 ||
+      CFG.storageGripTarget.lowerExtraForwardMm > 80.0 ||
+      CFG.storageGripTarget.extraForwardMmPerSec <= 0)
   {
     haltWithRedBlink(F("  [설정 오류] grip target 정렬값 오류"),
-                     F("  storageGripTarget margin/timeout/step 값을 확인하세요."));
+                     F("  storageGripTarget margin/timeout/step/depth 값을 확인하세요."));
   }
 
   if (CFG.poseTiming.upperGripStageMs == 0 ||
@@ -1240,6 +1251,110 @@ void step3_scan()
 // ============================================================
 //  4단계: 적재함 앞 접근 & 정밀 정렬
 // ============================================================
+int16_t storageAlignFrontErrorFor(int16_t flVal, int16_t frVal,
+                                  int16_t targetFl, int16_t targetFr,
+                                  int16_t tolerance)
+{
+  int16_t flError = flVal - targetFl;
+  int16_t frError = frVal - targetFr;
+  bool flOk = abs(flError) <= tolerance;
+  bool frOk = abs(frError) <= tolerance;
+  if (flOk && frOk)
+    return 0;
+  if (flOk)
+    return frError;
+  if (frOk)
+    return flError;
+  if ((flError < 0 && frError > 0) || (flError > 0 && frError < 0))
+    return abs(flError) >= abs(frError) ? flError : frError;
+  return (flError + frError) / 2;
+}
+
+bool alignStorageWithPsdTarget(const __FlashStringHelper *title,
+                               int16_t targetSl,
+                               int16_t targetFl,
+                               int16_t targetFr,
+                               int16_t tolerance)
+{
+  DEBUG_SERIAL.println(title);
+  DEBUG_SERIAL.print(F("  target SL/FL/FR/tol="));
+  DEBUG_SERIAL.print(targetSl);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.print(targetFl);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.print(targetFr);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.print(tolerance);
+  DEBUG_SERIAL.println(F(" (SR ignored)"));
+  ChangeMobilebaseMode2VelocityControlMode(dxl);
+
+  int16_t slVal = 0;
+  int16_t flVal = 0;
+  int16_t frVal = 0;
+  int16_t frontError = 0;
+  unsigned long t0 = millis();
+  while (1)
+  {
+    GetValueFromSideLeftPSDSensor(&slVal);
+    GetValueFromFrontLeftPSDSensor(&flVal);
+    GetValueFromFrontRightPSDSensor(&frVal);
+    frontError = storageAlignFrontErrorFor(flVal, frVal, targetFl, targetFr, tolerance);
+    if (!LocatingWithTwoSensors(dxl, slVal - targetSl,
+                                frontError, tolerance,
+                                DRIVE_DIRECTION_LEFT,
+                                CFG.speed.psdCorrectionSpeed))
+      break;
+    if (millis() - t0 > CFG.timeout.psdLoopMs)
+    {
+      DEBUG_SERIAL.println(F("  PSD 정렬 타임아웃"));
+      break;
+    }
+    delay(10);
+  }
+
+  SetMobileGoalVelocityForSyncWrite(dxl, 0, 0, 0, 0);
+  DEBUG_SERIAL.print(F("  PSD 정렬 종료 SL="));
+  DEBUG_SERIAL.print(slVal);
+  DEBUG_SERIAL.print(F(" FL="));
+  DEBUG_SERIAL.print(flVal);
+  DEBUG_SERIAL.print(F(" FR="));
+  DEBUG_SERIAL.print(frVal);
+  DEBUG_SERIAL.print(F(" frontError="));
+  DEBUG_SERIAL.print(frontError);
+  DEBUG_SERIAL.print(F(" FLerr="));
+  DEBUG_SERIAL.print(flVal - targetFl);
+  DEBUG_SERIAL.print(F(" FRerr="));
+  DEBUG_SERIAL.println(frVal - targetFr);
+  delay(CFG.wait.driveSettleMs);
+  return true;
+}
+
+bool alignStorageScanPosition(const __FlashStringHelper *title)
+{
+  return alignStorageWithPsdTarget(title,
+                                   CFG.psd.alignSl,
+                                   CFG.psd.alignFl,
+                                   CFG.psd.alignFr,
+                                   CFG.psd.alignTolerance);
+}
+
+bool alignStorageGripPosition(bool lower)
+{
+  return alignStorageWithPsdTarget(
+    lower
+      ? F("    집기 직전: 하층 SL+FL/FR PSD 정렬")
+      : F("    집기 직전: 상층 SL+FL/FR PSD 정렬"),
+    lower ? CFG.psd.lowerGripAlignSl : CFG.psd.gripAlignSl,
+    lower ? CFG.psd.lowerGripAlignFl : CFG.psd.gripAlignFl,
+    lower ? CFG.psd.lowerGripAlignFr : CFG.psd.gripAlignFr,
+    lower ? CFG.psd.lowerGripAlignTolerance : CFG.psd.gripAlignTolerance);
+}
+
+bool alignStorageGripPositionForSlot(uint8_t sourceSlot)
+{
+  return alignStorageGripPosition(sourceSlot >= 5);
+}
+
 void step4_alignToStorage()
 {
   DEBUG_SERIAL.println(F(""));
@@ -1310,38 +1425,29 @@ void step4_alignToStorage()
   }
   DEBUG_SERIAL.println(F("  우측 이동 완료"));
 
-  // --- SL+FR 2축 정밀 정렬: 속도제어 모드로 전환 ---
-  DEBUG_SERIAL.println(F("  [4-4] SL+FR 2축 정밀 정렬..."));
-  ChangeMobilebaseMode2VelocityControlMode(dxl);
-
-  int16_t slVal, frVal;
-  unsigned long t0 = millis();
-  while (1)
-  {
-    GetValueFromSideLeftPSDSensor(&slVal);
-    GetValueFromFrontRightPSDSensor(&frVal);
-    if (!LocatingWithTwoSensors(dxl, slVal - CFG.psd.alignSl,
-                                frVal - CFG.psd.alignFr, CFG.psd.alignTolerance,
-                                DRIVE_DIRECTION_LEFT,
-                                CFG.speed.psdCorrectionSpeed))
-      break;
-    if (millis() - t0 > CFG.timeout.psdLoopMs)
-    {
-      DEBUG_SERIAL.println(F("  [4-3] 타임아웃"));
-      break;
-    }
-  }
-  SetMobileGoalVelocityForSyncWrite(dxl, 0, 0, 0, 0);
-  DEBUG_SERIAL.print(F("  정렬 완료 SL="));
-  DEBUG_SERIAL.print(slVal);
-  DEBUG_SERIAL.print(F(" FR="));
-  DEBUG_SERIAL.println(frVal);
-  delay(CFG.wait.driveSettleMs);
+  alignStorageScanPosition(F("  [4-4] 스캔 기준 SL+FL/FR PSD 정밀 정렬"));
 
   // 카메라 램프 ON
   pixy.setLamp(1, 1);
   delay(CFG.wait.cameraLampMs);
   DEBUG_SERIAL.println(F("  카메라 램프 ON"));
+}
+
+bool waitForMobilePositionOrTimeout(unsigned long timeoutMs,
+                                    const __FlashStringHelper *timeoutMessage)
+{
+  unsigned long startedAt = millis();
+  while (!CheckIfMobilebaseIsInPosition(dxl))
+  {
+    if (millis() - startedAt > timeoutMs)
+    {
+      DEBUG_SERIAL.println(timeoutMessage);
+      SetMobileGoalVelocityForSyncWrite(dxl, 0, 0, 0, 0);
+      return false;
+    }
+    delay(10);
+  }
+  return true;
 }
 
 // ============================================================
@@ -1352,25 +1458,71 @@ void step4_alignToStorage()
  * 카메라에 목표 적재함 slot 블록이 잡혔을 때 미세조정 → 상/하층 판별 → 집기까지 수행
  * 반환: true=집기 성공, false=실패
  */
+int32_t cameraFineTuneSignedVelocityForError(int16_t error, int16_t tolerance)
+{
+  int16_t absError = abs(error);
+  if (absError <= tolerance)
+    return 0;
+
+  int32_t maxSpeed = CFG.speed.cameraFineTuneSpeed;
+  int32_t minSpeed = maxSpeed / 4;
+  if (minSpeed < 25)
+    minSpeed = 25;
+  if (minSpeed > maxSpeed)
+    minSpeed = maxSpeed;
+
+  int16_t fullSpeedError = CFG.storageGripTarget.alignFullSpeedPixelError;
+  if (fullSpeedError <= tolerance)
+    fullSpeedError = tolerance + 1;
+
+  int32_t numerator = (int32_t)(absError - tolerance);
+  int32_t denominator = (int32_t)(fullSpeedError - tolerance);
+  int32_t speed = minSpeed + ((maxSpeed - minSpeed) * numerator) / denominator;
+  if (speed > maxSpeed)
+    speed = maxSpeed;
+  return error > 0 ? speed : -speed;
+}
+
 bool stepCameraGripAlignment(int16_t xError, int16_t yError)
 {
-  uint8_t direction = DRIVE_DIRECTION_LEFT;
-  int16_t error = xError;
+  int32_t sideVelocity = cameraFineTuneSignedVelocityForError(
+    xError, CFG.storageGripTarget.centerToleranceX);
+  int32_t forwardVelocity = cameraFineTuneSignedVelocityForError(
+    yError, CFG.storageGripTarget.centerToleranceY);
+  if (!CFG.storageGripTarget.yErrorUsesForwardDirection)
+    forwardVelocity = -forwardVelocity;
 
-  if (abs(yError) > CFG.storageGripTarget.yMargin &&
-      abs(yError) > abs(xError))
-  {
-    direction = CFG.storageGripTarget.yErrorUsesForwardDirection
-                  ? DRIVE_DIRECTION_FORWARD
-                  : DRIVE_DIRECTION_BACKWARD;
-    error = yError;
-  }
-
-  DriveWithOneSensor(dxl, error, 1, direction, CFG.speed.cameraFineTuneSpeed);
+  SetMobileGoalVelocityForSyncWrite(
+    dxl,
+    (-forwardVelocity + sideVelocity) / 2,
+    (-forwardVelocity - sideVelocity) / 2,
+    (-forwardVelocity - sideVelocity) / 2,
+    (-forwardVelocity + sideVelocity) / 2);
   delay(CFG.storageGripTarget.alignStepMs);
-  SetMobileGoalVelocityForSyncWrite(dxl, 0, 0, 0, 0);
-  delay(CFG.storageGripTarget.alignSettleMs);
   return true;
+}
+
+float storageGripDepthMmForTarget(uint8_t targetId)
+{
+  return storageGripTargetUsesUpperGrip(targetId)
+           ? CFG.storageGripTarget.upperExtraForwardMm
+           : CFG.storageGripTarget.lowerExtraForwardMm;
+}
+
+bool driveStorageGripDepth(uint8_t targetId, uint8_t direction)
+{
+  float distanceMm = storageGripDepthMmForTarget(targetId);
+  if (distanceMm <= 0.0)
+    return true;
+
+  ChangeMobilebaseMode2ExtendedPositionControlWithTimeBasedProfileMode(dxl);
+  DriveDistanceAndMmPerSecAndDirection(dxl, distanceMm, direction,
+                                       CFG.storageGripTarget.extraForwardMmPerSec);
+  bool ok = waitForMobilePositionOrTimeout(CFG.timeout.positionMoveMs,
+                                           F("    그립 깊이 이동 타임아웃"));
+  ChangeMobilebaseMode2VelocityControlMode(dxl);
+  SetMobileGoalVelocityForSyncWrite(dxl, 0, 0, 0, 0);
+  return ok;
 }
 
 bool fineTuneAndPickStorageSlot(uint8_t targetSlot, uint8_t targetSignatureMap)
@@ -1396,6 +1548,8 @@ bool fineTuneAndPickStorageSlot(uint8_t targetSlot, uint8_t targetSignatureMap)
 
   runTimedManipulatorPose(STORAGE, CFG.poseTiming.preGripMs, 0.0,
                           F("  그립 목표창 정렬 전 3번 적재함 보기 자세가 필요합니다."));
+  if (!alignStorageGripPositionForSlot(targetSlot))
+    return false;
 
   unsigned long t0 = millis();
   while (1)
@@ -1442,6 +1596,11 @@ bool fineTuneAndPickStorageSlot(uint8_t targetSlot, uint8_t targetSignatureMap)
 
         // grip target 기준 상/하층 판별
         bool upperTarget = storageGripTargetUsesUpperGrip(targetId);
+        if (!alignStorageGripPosition(!upperTarget))
+          return false;
+        if (!driveStorageGripDepth(targetId, DRIVE_DIRECTION_FORWARD))
+          return false;
+
         if (upperTarget)
         {
           // 상층 블록
@@ -1471,6 +1630,9 @@ bool fineTuneAndPickStorageSlot(uint8_t targetSlot, uint8_t targetSignatureMap)
           runTimedManipulatorPose(STORAGE, CFG.poseTiming.storageWithBlockMs, 0.0,
                                   F("  집은 블록을 들고 이동하기 전 3번 안전 이동 자세가 필요합니다."));
         }
+
+        if (!driveStorageGripDepth(targetId, DRIVE_DIRECTION_BACKWARD))
+          return false;
 
         return true;
       }
@@ -1514,15 +1676,19 @@ bool placeAtZone(uint8_t goalPos)
   DEBUG_SERIAL.print(goalPos);
   DEBUG_SERIAL.println(F("번 칸에 배치..."));
 
-  // SL PSD로 미션수행존 위치까지 좌측 이동
+  // SL+FR PSD로 미션수행존 위치까지 좌측 이동. FL/SR은 이 위치에서 불안정해서 쓰지 않는다.
   int16_t slVal;
+  int16_t frVal;
   unsigned long t0 = millis();
   while (1)
   {
     GetValueFromSideLeftPSDSensor(&slVal);
-    if (!DriveWithOneSensor(dxl, slVal - CFG.psd.missionZoneSl,
-                            CFG.psd.missionZoneTolerance, DRIVE_DIRECTION_LEFT,
-                            CFG.speed.psdCorrectionSpeed))
+    GetValueFromFrontRightPSDSensor(&frVal);
+    if (!LocatingWithTwoSensors(dxl, slVal - CFG.psd.missionZoneSl,
+                                frVal - CFG.psd.missionZoneFr,
+                                CFG.psd.missionZoneTolerance,
+                                DRIVE_DIRECTION_LEFT,
+                                CFG.speed.psdCorrectionSpeed))
       break;
     if (millis() - t0 > CFG.timeout.psdLoopMs)
     {
@@ -1557,30 +1723,12 @@ bool placeAtZone(uint8_t goalPos)
 }
 
 /*
- * 적재함 앞 SL+FR 재정렬
+ * 적재함 앞 SL+FL/FR 재정렬
  */
 void realignToStorage()
 {
   DEBUG_SERIAL.println(F("    적재함 재정렬..."));
-  int16_t slVal, frVal;
-  unsigned long t0 = millis();
-  while (1)
-  {
-    GetValueFromSideLeftPSDSensor(&slVal);
-    GetValueFromFrontRightPSDSensor(&frVal);
-    if (!LocatingWithTwoSensors(dxl, slVal - CFG.psd.alignSl,
-                                frVal - CFG.psd.alignFr, CFG.psd.alignTolerance,
-                                DRIVE_DIRECTION_LEFT,
-                                CFG.speed.psdCorrectionSpeed))
-      break;
-    if (millis() - t0 > CFG.timeout.psdLoopMs)
-    {
-      DEBUG_SERIAL.println(F("    재정렬 타임아웃"));
-      break;
-    }
-  }
-  SetMobileGoalVelocityForSyncWrite(dxl, 0, 0, 0, 0);
-  delay(CFG.wait.driveSettleMs);
+  alignStorageScanPosition(F("    적재함 기준 위치 SL+FL/FR PSD 재정렬"));
 }
 
 // ============================================================

@@ -59,7 +59,7 @@ This version targets the WCRC logistics robot 2 sorting mission and keeps the fu
 - `CFG.front.slowSpeed`: `150`
 - `CFG.psd.missionSl`: `540` (`SL` 목표값. 값을 올리면 미션지시존에서 덜 오른쪽에 멈춥니다.)
 - `CFG.speed.psdCorrectionSpeed`: `200`
-- `CFG.speed.cameraFineTuneSpeed`: `200`
+- `CFG.speed.cameraFineTuneSpeed`: `140`
 - `CFG.speed.storageScanSpeed`: `200`
 - `CFG.speed.returnSpeed`: `200`
 - `CFG.speed.positionMoveMmPerSec`: `150`
@@ -78,10 +78,18 @@ This version targets the WCRC logistics robot 2 sorting mission and keeps the fu
 - `CFG.cameraScan.missionInstructionMinBlockArea`: `80`
 - `CFG.cameraScan.missionInstructionLampOn`: `false`
 - `CFG.cameraScan.storageMinBlockArea`: `80`
-- `CFG.cameraScan.storageYUpperLowerSplit`: `103`
-- `CFG.storagePickupRegion`: top `(118,1)~(216,1)`, middle `(120,90)~(208,99)`, bottom `(118,190)~(205,201)`, `yMargin=12`
-- `CFG.storageGripTarget`: upper `(134,48)~(182,52)`, `(137,94)~(178,97)` / lower `(141,128)~(172,130)`, `(137,166)~(171,169)`
-- `CFG.storageGripTarget.alignTimeoutMs`: `3500`
+- `CFG.cameraScan.storageYUpperLowerSplit`: `132`
+- `CFG.psd.alignFl/alignSl/alignFr`: `266 / 354 / 269` (적재함 1열 스캔 기준 위치, SR ignored)
+- `CFG.psd.alignTolerance`: `8`
+- `CFG.psd.gripAlignFl/gripAlignSl/gripAlignFr`: `349 / 359 / 363` (상층 집기 직전)
+- `CFG.psd.lowerGripAlignFl/lowerGripAlignSl/lowerGripAlignFr`: `325 / 354 / 337` (하층 집기 직전)
+- `CFG.psd.missionZoneSl/missionZoneFr`: `635 / 220` (미션수행존 배치 기준, SL+FR)
+- `CFG.psd.missionZoneTolerance`: `8`
+- `CFG.storagePickupRegion`: upper `(129,57)~(180,110)`, lower `(139,155)~(178,207)`, `margin=0`
+- `CFG.storageGripTarget`: upper `(129,57)~(180,110)`, lower `(139,155)~(178,207)`, center tolerance `4/4`
+- `CFG.storageGripTarget.alignTimeoutMs`: `5000`
+- `CFG.storageGripTarget.alignStepMs`: `15`
+- `CFG.storageGripTarget.upperExtraForwardMm/lowerExtraForwardMm`: `8.0 / 5.0` at `60mm/s`
 - `CFG.storageRack.pickSlotOrder`: currently `1, 5, 2, 6, 3, 7, 4, 8`
 - `CFG.storageRack.perSlotScanMs`: `1800`; if one slot takes longer on the field, raise this toward `2500`
 - `CFG.storageRack.columnXCenters`: currently `70, 125, 180, 235`

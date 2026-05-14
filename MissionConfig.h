@@ -16,8 +16,8 @@ class MissionConfig
 {
 public:
   static const uint8_t MAX_MISSION_BLOCKS = 8;
-  static const uint8_t STORAGE_PICKUP_REGION_COUNT = 3;
-  static const uint8_t STORAGE_GRIP_TARGET_COUNT = 4;
+  static const uint8_t STORAGE_PICKUP_REGION_COUNT = 2;
+  static const uint8_t STORAGE_GRIP_TARGET_COUNT = 2;
 
   struct PoseConfig
   {
@@ -47,15 +47,26 @@ public:
     int16_t missionSl = 540;
     int16_t missionTolerance = 5;
 
-    // 4단계: 적재함 앞 2축 정렬. 현장 실측 기준: FL≈329, FR≈325, SL≈272.
-    // 현재 정렬 로직은 SL/FR만 사용한다.
-    int16_t alignSl = 272;
-    int16_t alignFr = 325;
-    int16_t alignTolerance = 5;
+    // 4단계: 적재함 1열을 처음 보는 기준 위치. SR은 정렬에 사용하지 않는다.
+    int16_t alignFl = 266;
+    int16_t alignSl = 354;
+    int16_t alignFr = 269;
+    int16_t alignTolerance = 8;
+
+    // 5단계: 집기 직전 기준 위치. 상층은 더 깊게, 하층은 조금 덜 깊게 들어간다.
+    int16_t gripAlignFl = 349;
+    int16_t gripAlignSl = 359;
+    int16_t gripAlignFr = 363;
+    int16_t gripAlignTolerance = 8;
+    int16_t lowerGripAlignFl = 325;
+    int16_t lowerGripAlignSl = 354;
+    int16_t lowerGripAlignFr = 337;
+    int16_t lowerGripAlignTolerance = 8;
 
     // 5단계: 미션수행존 / 적재함 스캔
-    int16_t missionZoneSl = 595;
-    int16_t missionZoneTolerance = 5;
+    int16_t missionZoneSl = 635;
+    int16_t missionZoneFr = 220;
+    int16_t missionZoneTolerance = 8;
     int16_t scanSl = 526;
     int16_t scanSlTolerance = 5;
     int16_t storageScanFrNoObstacle = 220;
@@ -75,7 +86,7 @@ public:
   {
     // Velocity-control helpers. Keep these explicit in Motor.ino calls instead of relying on Mobilebase.h defaults.
     int32_t psdCorrectionSpeed = 200;
-    int32_t cameraFineTuneSpeed = 200;
+    int32_t cameraFineTuneSpeed = 140;
     int32_t storageScanSpeed = 200;
     int32_t returnSpeed = 200;
 
@@ -106,36 +117,39 @@ public:
   struct StoragePickupRegionConfig
   {
     // Pixy 화면의 블록 중심점이 이 영역 안에 들어오면 집기 후보로 본다.
-    // 1=최상단, 2=중앙, 3=최하단.
-    int16_t xMin[STORAGE_PICKUP_REGION_COUNT] = {118, 120, 118};
-    int16_t xMax[STORAGE_PICKUP_REGION_COUNT] = {216, 208, 205};
-    int16_t yMin[STORAGE_PICKUP_REGION_COUNT] = {1, 90, 190};
-    int16_t yMax[STORAGE_PICKUP_REGION_COUNT] = {1, 99, 201};
-
-    // 상단/중앙 영역은 얇게 측정된 값이라 y 흔들림을 허용한다.
+    // 1=upper, 2=lower. 튜너 MissionRouteTuner와 같은 계약을 유지한다.
+    int16_t xMin[STORAGE_PICKUP_REGION_COUNT] = {129, 139};
+    int16_t xMax[STORAGE_PICKUP_REGION_COUNT] = {180, 178};
+    int16_t yMin[STORAGE_PICKUP_REGION_COUNT] = {57, 155};
+    int16_t yMax[STORAGE_PICKUP_REGION_COUNT] = {110, 207};
     int16_t xMargin = 0;
-    int16_t yMargin = 12;
+    int16_t yMargin = 0;
 
-    // 매니퓰레이터 pose는 현재 상/하층 2종류만 있으므로,
-    // 최상단은 upper pose, 중앙/최하단은 lower pose를 사용한다.
-    uint8_t useUpperGripPose[STORAGE_PICKUP_REGION_COUNT] = {1, 0, 0};
+    // 매니퓰레이터 pose는 현재 상/하층 2종류만 사용한다.
+    uint8_t useUpperGripPose[STORAGE_PICKUP_REGION_COUNT] = {1, 0};
   };
 
   struct StorageGripTargetConfig
   {
     // pickup region에서 블록을 찾은 뒤, 그립 직전 Pixy 중심점이 들어가야 하는 목표 창.
-    // 1~2는 upper grip pose, 3~4는 lower grip pose 후보로 사용한다.
-    int16_t xMin[STORAGE_GRIP_TARGET_COUNT] = {134, 137, 141, 137};
-    int16_t xMax[STORAGE_GRIP_TARGET_COUNT] = {182, 178, 172, 171};
-    int16_t yMin[STORAGE_GRIP_TARGET_COUNT] = {48, 94, 128, 166};
-    int16_t yMax[STORAGE_GRIP_TARGET_COUNT] = {52, 97, 130, 169};
-    int16_t xMargin = 4;
-    int16_t yMargin = 4;
-    uint8_t useUpperGripPose[STORAGE_GRIP_TARGET_COUNT] = {1, 1, 0, 0};
+    // 1=upper, 2=lower. 최종 깊이는 아래 extraForwardMm에서 보정한다.
+    int16_t xMin[STORAGE_GRIP_TARGET_COUNT] = {129, 139};
+    int16_t xMax[STORAGE_GRIP_TARGET_COUNT] = {180, 178};
+    int16_t yMin[STORAGE_GRIP_TARGET_COUNT] = {57, 155};
+    int16_t yMax[STORAGE_GRIP_TARGET_COUNT] = {110, 207};
+    int16_t xMargin = 0;
+    int16_t yMargin = 0;
+    int16_t centerToleranceX = 4;
+    int16_t centerToleranceY = 4;
+    uint8_t useUpperGripPose[STORAGE_GRIP_TARGET_COUNT] = {1, 0};
 
-    uint16_t alignTimeoutMs = 3500;
-    uint16_t alignStepMs = 120;
-    uint16_t alignSettleMs = 80;
+    uint16_t alignTimeoutMs = 5000;
+    uint16_t alignStepMs = 15;
+    uint16_t alignSettleMs = 0;
+    int16_t alignFullSpeedPixelError = 28;
+    float upperExtraForwardMm = 8.0;
+    float lowerExtraForwardMm = 5.0;
+    int32_t extraForwardMmPerSec = 60;
 
     // yError 양수일 때 사용할 기준 축. 현장에서 반대로 움직이면 false로 바꾼다.
     bool yErrorUsesForwardDirection = true;
@@ -161,7 +175,7 @@ public:
     // 스토리지에서 목표 블록을 중앙에 맞추고 상/하층을 판별하는 기준.
     int16_t storageXSetpoint = 157;
     int16_t storageXTolerance = 6;
-    int16_t storageYUpperLowerSplit = 103;
+    int16_t storageYUpperLowerSplit = 132;
 
     // Pixy가 작은 반사/쪼개진 조각을 블록으로 세지 않도록 하는 최소 면적.
     // MissionRouteTuner의 pixy scan/watch/sweep으로 현장 확인 후 조정한다.
