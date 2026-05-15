@@ -7,7 +7,7 @@ USB Serial Monitor를 기준으로 사용합니다. 블루투스 UART는 입력 
 `Serial1`은 Dynamixel 모터 통신에 사용하므로 블루투스에 쓰면 안 됩니다.
 블루투스로 스케치 업로드는 하지 않고, 긴 출력은 USB Serial Monitor에서 확인합니다.
 모듈이 `Serial3` 또는 다른 속도로 연결된 보드라면 `Debug.h`의 `BLUETOOTH_SERIAL`, `BLUETOOTH_BAUD_RATE`만 바꾸세요.
-미션 단계 이동값은 이 스케치의 `MissionConfig.h`에 있으며, 경기 코드 `Motor/MissionConfig.h`와 맞춰야 합니다.
+PSD/Pixy/적재함/미션수행존 공용 보정값은 `WcrcMissionSharedConfig.h`에 있으며, `Motor` 본 미션도 같은 헤더를 사용합니다. 이 스케치의 `MissionConfig.h`는 튜너 전용 대기/콘솔 timing wrapper입니다.
 
 ## 기본 원칙
 
@@ -265,7 +265,7 @@ mission columnstep 72 150
 
 - `front` / `slow`: 미션지시존 전면 접근 속도입니다. 단위는 velocity raw입니다.
 - `psd`: SL/FR PSD 정렬 속도입니다. 단위는 velocity raw입니다.
-- 미션지시존이 너무 오른쪽이면 `MissionConfig.h`의 `CFG.psd.missionSl`을 올립니다. 현재 기본값은 `640`입니다.
+- 미션지시존이 너무 오른쪽이면 `WcrcMissionSharedConfig.h`의 `CFG.psd.missionSl`을 올립니다. 현재 기본값은 `640`입니다.
 - `position`: 적재함 쪽 거리 이동 속도입니다. 단위는 `mm/s`입니다.
 - 팔 자세/집게 hold 시간은 미션 튜너에서 200ms로 고정합니다. 큰 raw 이동도 profile 상한 때문에 최대 500ms 안에서 실행됩니다.
 - `speed reset`: 현재 profile 기준 preset으로 되돌립니다.
@@ -363,7 +363,7 @@ seq place 1
 - Pixy signature 학습은 PixyMon에서 수행합니다. Arduino 쪽에서는 이미 저장된 signature를 읽고, brightness/lamp/filter/watch/sweep만 조정합니다.
 - Pixy PRM 파일을 경기 중 자동으로 교체하는 방식은 사용하지 않습니다. 최종 PRM 하나를 경기 전에 로드하고 검증하는 쪽이 더 안전합니다.
 - EEPROM 자세 저장은 `pose apply`, `pose save`, `pose restore`로 후보를 확인한 뒤 `pose confirm`을 입력했을 때만 수행합니다.
-- `drive trim`, `grip test`, `pixy sweep` 결과는 후보값입니다. 튜너가 `MissionConfig.h`, `Gripper.h`, `Motor.ino`에 자동 반영하지 않습니다.
+- `drive trim`, `grip test`, `pixy sweep` 결과는 후보값입니다. 튜너 명령 결과가 소스 파일에 자동 반영되지는 않습니다. 코드 기본값으로 고정하려면 공용값은 `WcrcMissionSharedConfig.h`, 그리퍼 상수는 `Gripper.h`에 명시합니다.
 - Notion이나 사이트 운영 기록은 경기 전/후 관리용입니다. 주행 중 제어 루프가 외부 사이트나 네트워크에 의존하면 안 됩니다.
 
 ## 제한사항과 어려운 점
@@ -404,7 +404,7 @@ Git commit과 연결하려면 테스트가 끝난 뒤 `git rev-parse --short HEA
 
 지금 단계에서 바로 `Motor.ino`를 크게 바꾸기보다, 튜너로 값을 검증한 뒤 작은 단위로 반영하는 순서가 안전합니다.
 
-1. `pixy sweep`으로 찾은 장소별 brightness 후보를 비교하고, 최종 한 값을 `MissionConfig.h`에 명시합니다.
+1. `pixy sweep`으로 찾은 장소별 brightness 후보를 비교하고, 최종 한 값을 공용 config 또는 Pixy 설정에 명시합니다.
 2. `Motor.ino`에는 단일 프레임 인식 대신 `N프레임 중 M프레임 이상`, `면적 최소값`, `x/y 흔들림 제한`을 통과한 블록만 집도록 안정 판정 함수를 추가합니다.
 3. 적재함 4x2 슬롯은 먼저 고정 좌표와 signature 매핑을 기록하고, 이후 Pixy x/y 중심값이 예상 슬롯 범위 안에 있는지 검증하는 방식으로 확장합니다.
 4. 집게 실패가 반복되면 `grip test` 후보값을 기준으로 열림/닫힘 상수를 조정하되, 실제 저장 전 블록 두께별 반복 테스트를 남깁니다.

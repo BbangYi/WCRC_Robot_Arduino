@@ -11,7 +11,10 @@ Repository name: `wcrc-logistics-robot-motor`
 
 ## Configuration
 
-- Change mission tuning values in `MissionConfig.h` first.
+- Change shared mission tuning values in `MissionRouteTuner/WcrcMissionSharedConfig.h` first.
+- Keep `Motor/MissionConfig.h` and `MissionRouteTuner/MissionConfig.h` as thin sketch-specific wrappers.
+- Put only Motor-only autonomous timing in `Motor/MissionConfig.h`.
+- Put only tuner console/test timing in `MissionRouteTuner/MissionConfig.h`.
 - Do not add mission-tuning `#define` values to `Motor.ino`.
 - Keep low-level pin assignments in `Pins.h`.
 - Keep low-level mobile-base ID / control-table defaults in `Mobilebase.h`.
@@ -32,13 +35,14 @@ camera side
 - Keep this numbering in `CFG.storageRack`.
 - Current picking logic detects whether a Pixy2 block center is inside configured pickup regions.
 - Tune `CFG.storagePickupRegion` from `MissionRouteTuner` using `pixy storage lower` / `pixy storage all`.
-- Default pick order is `1, 5, 2, 6, 3, 7, 4, 8`; the current field-test run caps this to the first 6 source slots.
+- `CFG.storageRack.pickSlotOrder` is legacy fallback/debug data. The autonomous mission uses storage survey detections as the real source positions.
 
 ## Mission-Zone Convention
 
-- `CFG.mission.goalPositions` is the destination order announced on competition day. The current field-test default uses mission-zone slots `1~6`.
-- Mission-zone placement pose ID is `CFG.pose.missionZoneStartId + goalPosition`.
-- EEPROM pose IDs `7` to `12` must match mission-zone positions `1` to `6`.
+- Current autonomous placement uses the detected storage source slot as the mission-zone goal slot: `goalSlot = sourceSlot`.
+- `CFG.mission.goalPositions` is retained as legacy/manual fallback data.
+- Mission-zone placement pose ID is `CFG.pose.missionZoneStartId + goalSlot`.
+- EEPROM pose IDs `7` to `14` must match mission-zone positions `1` to `8`.
 
 ## Change Discipline
 

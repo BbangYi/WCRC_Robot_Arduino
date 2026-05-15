@@ -8,8 +8,9 @@
 - [ ] 변경 파일과 위험도를 `ops/events.jsonl`에 기록했다.
 - [ ] `git diff --check`가 통과했다.
 - [ ] Arduino IDE Verify가 통과했다.
-- [ ] 전체 자율주행 전에 EEPROM 자세 1,2,3,4,5,7~12가 존재하는지 확인했다.
-- [ ] Pixy signature 학습값이 `MissionConfig.h`와 맞는다.
+- [ ] 전체 자율주행 전에 EEPROM 자세 1,3,4,5,7~14가 존재하는지 확인했다.
+- [ ] `Motor/MissionConfig.h`와 `MissionRouteTuner/MissionConfig.h`가 직접 현장값을 중복 보유하지 않고 공용 `MissionRouteTuner/WcrcMissionSharedConfig.h`를 사용한다.
+- [ ] Pixy signature 학습값이 `MissionRouteTuner/WcrcMissionSharedConfig.h`의 signature map과 맞는다.
 - [ ] Pixy block area가 `missionInstructionMinBlockArea` / `storageMinBlockArea` 기준보다 충분히 크다. 정상 블록이 숨겨지면 기준을 `0`으로 낮춰 먼저 원인을 확인한다.
 - [ ] finish 복귀 시간은 현장 테스트 기록 없이 바꾸지 않았다.
 

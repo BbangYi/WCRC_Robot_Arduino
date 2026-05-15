@@ -30,9 +30,16 @@ camera side
 ## 2026-04-30 - 미션 수행존 배치는 EEPROM 자세로 관리
 
 - 상태: 채택
-- 결정: 미션 수행존 각 칸 배치는 로봇 본체를 칸마다 움직이는 방식보다 EEPROM 자세로 관리한다. 현재 실제 테스트는 pose 7~12를 1~6번 칸으로 쓴다.
+- 결정: 미션 수행존 각 칸 배치는 로봇 본체를 칸마다 움직이는 방식보다 EEPROM 자세로 관리한다. 현재 실제 테스트는 pose 7~14를 1~8번 칸으로 쓴다.
 - 이유: 본체 이동은 바퀴 미끄러짐이 누적된다. 팔 자세는 칸별 튜닝과 롤백이 더 쉽다.
 - 다시 볼 조건: 특정 칸이 매니퓰레이터 자세만으로 안전하게 닿지 않을 때.
+
+## 2026-05-15 - Motor와 MissionRouteTuner field config 공용화
+
+- 상태: 채택
+- 결정: PSD/Pixy/적재함/미션수행존처럼 두 스케치가 같이 써야 하는 현장 보정값은 `MissionRouteTuner/WcrcMissionSharedConfig.h`에 둔다. `Motor/MissionConfig.h`와 `MissionRouteTuner/MissionConfig.h`는 각 스케치 전용 timing wrapper로 유지한다.
+- 이유: Arduino IDE는 스케치 폴더를 격리해서 빌드하므로 튜너가 부모 폴더 헤더를 직접 include하면 컴파일이 깨진다. 공용 헤더를 튜너 스케치 안에 두고 Motor가 하위 경로로 include하면 양쪽 컴파일을 유지하면서 값을 한 곳에서 관리할 수 있다.
+- 다시 볼 조건: Arduino 빌드 방식이 바뀌거나, 튜너 calibration EEPROM record를 Motor가 직접 읽도록 확장할 때.
 
 ## 2026-04-30 - Pixy signature 제약
 

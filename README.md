@@ -19,7 +19,9 @@ This version targets the WCRC logistics robot 2 sorting mission and keeps the fu
 | File | Role |
 | --- | --- |
 | `Motor.ino` | Main 6-step autonomous mission sequence |
-| `MissionConfig.h` | Single configuration entry point for mission order, PSD thresholds, waits, timeouts, and distances |
+| `MissionConfig.h` | Motor-only wrapper for autonomous manipulator/wait timing |
+| `MissionRouteTuner/WcrcMissionSharedConfig.h` | Shared field calibration used by both `Motor` and `MissionRouteTuner` |
+| `MissionRouteTuner/MissionConfig.h` | Tuner-only wrapper for console/test wait timing |
 | `PROJECT_RULES.md` | Repo, configuration, storage-rack, and test rules |
 | `ops/` | Git-tracked operations records for field tests, EEPROM poses, safety checks, and design decisions |
 | `Mobilebase.cpp` / `Mobilebase.h` | Mecanum mobile-base control, velocity mode, position mode, PSD-assisted movement |
@@ -32,9 +34,11 @@ This version targets the WCRC logistics robot 2 sorting mission and keeps the fu
 
 ## Configuration Rules
 
-- Edit mission tuning values in `MissionConfig.h` first.
+- Edit shared field tuning values in `MissionRouteTuner/WcrcMissionSharedConfig.h` first.
+- Keep `Motor/MissionConfig.h` for autonomous Motor-only timing such as `CFG.poseTiming`.
+- Keep `MissionRouteTuner/MissionConfig.h` for tuner console/test timing only.
 - Do not add new mission-tuning `#define` values in `Motor.ino`.
-- Keep execution logic in `Motor.ino`; keep field values, timeouts, waits, thresholds, and mission order in `MissionConfig.h`.
+- Keep execution logic in `Motor.ino`; keep field values, thresholds, distances, rack layout, and mission contracts in the shared config header.
 - Use names that include physical units when useful: `Mm`, `Ms`, `Adc`.
 - Keep low-level pin assignments in `Pins.h`.
 - Keep low-level mobile-base motor defaults in `Mobilebase.h`.
