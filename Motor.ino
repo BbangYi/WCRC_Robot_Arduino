@@ -79,6 +79,10 @@ struct StorageDetection
   int16_t x;
   int16_t y;
   uint32_t area;
+  int16_t psdFl;
+  int16_t psdFr;
+  int16_t psdSl;
+  int16_t psdSr;
   bool assigned;
 };
 
@@ -92,6 +96,10 @@ struct MissionPickTask
   int16_t x;
   int16_t y;
   uint32_t area;
+  int16_t psdFl;
+  int16_t psdFr;
+  int16_t psdSl;
+  int16_t psdSr;
   bool found;
 };
 
@@ -108,6 +116,33 @@ uint32_t pixyBlockArea(uint8_t blockIndex)
 {
   return (uint32_t)pixy.ccc.blocks[blockIndex].m_width *
          (uint32_t)pixy.ccc.blocks[blockIndex].m_height;
+}
+
+void readPsdSnapshotFields(int16_t *flValue,
+                           int16_t *frValue,
+                           int16_t *slValue,
+                           int16_t *srValue)
+{
+  GetValueFromFrontLeftPSDSensor(flValue);
+  GetValueFromFrontRightPSDSensor(frValue);
+  GetValueFromSideLeftPSDSensor(slValue);
+  GetValueFromSideRightPSDSensor(srValue);
+}
+
+void printPsdSnapshotJsonFields(int16_t flValue,
+                                int16_t frValue,
+                                int16_t slValue,
+                                int16_t srValue)
+{
+  DEBUG_SERIAL.print(F("\"psd\":{\"fl\":"));
+  DEBUG_SERIAL.print(flValue);
+  DEBUG_SERIAL.print(F(",\"fr\":"));
+  DEBUG_SERIAL.print(frValue);
+  DEBUG_SERIAL.print(F(",\"sl\":"));
+  DEBUG_SERIAL.print(slValue);
+  DEBUG_SERIAL.print(F(",\"sr\":"));
+  DEBUG_SERIAL.print(srValue);
+  DEBUG_SERIAL.print(F("}"));
 }
 
 bool pixyBlockPassesFilter(uint8_t blockIndex, uint8_t signatureMap, uint16_t minArea)
@@ -1880,7 +1915,11 @@ bool upsertStorageDetection(StorageDetection detections[],
                             uint8_t pickupRegion,
                             int16_t x,
                             int16_t y,
-                            uint32_t area)
+                            uint32_t area,
+                            int16_t psdFl,
+                            int16_t psdFr,
+                            int16_t psdSl,
+                            int16_t psdSr)
 {
   for (uint8_t i = 0; i < *detectionCount; i++)
   {
@@ -1893,6 +1932,10 @@ bool upsertStorageDetection(StorageDetection detections[],
         detections[i].x = x;
         detections[i].y = y;
         detections[i].area = area;
+        detections[i].psdFl = psdFl;
+        detections[i].psdFr = psdFr;
+        detections[i].psdSl = psdSl;
+        detections[i].psdSr = psdSr;
       }
       return true;
     }
@@ -1909,6 +1952,10 @@ bool upsertStorageDetection(StorageDetection detections[],
   detection.x = x;
   detection.y = y;
   detection.area = area;
+  detection.psdFl = psdFl;
+  detection.psdFr = psdFr;
+  detection.psdSl = psdSl;
+  detection.psdSr = psdSr;
   detection.assigned = false;
   (*detectionCount)++;
   return true;
@@ -1932,6 +1979,9 @@ void printStorageDetectionJson(const StorageDetection &detection)
   DEBUG_SERIAL.print(detection.y);
   DEBUG_SERIAL.print(F(",\"area\":"));
   DEBUG_SERIAL.print(detection.area);
+  DEBUG_SERIAL.print(F(","));
+  printPsdSnapshotJsonFields(detection.psdFl, detection.psdFr,
+                             detection.psdSl, detection.psdSr);
   DEBUG_SERIAL.println(F("}"));
 }
 
@@ -1952,6 +2002,12 @@ bool surveyCurrentStorageColumn(StorageDetection detections[],
 
   for (uint8_t frame = 0; frame < frames; frame++)
   {
+    int16_t psdFl = 0;
+    int16_t psdFr = 0;
+    int16_t psdSl = 0;
+    int16_t psdSr = 0;
+    readPsdSnapshotFields(&psdFl, &psdFr, &psdSl, &psdSr);
+
     pixy.ccc.getBlocks(true, signatureMap);
     DEBUG_SERIAL.print(F("  frame "));
     DEBUG_SERIAL.print(frame + 1);
@@ -1977,7 +2033,8 @@ bool surveyCurrentStorageColumn(StorageDetection detections[],
       uint8_t signature = pixy.ccc.blocks[i].m_signature;
       uint32_t area = pixyBlockArea(i);
       if (upsertStorageDetection(detections, detectionCount, signature,
-                                 sourceSlot, column, pickupRegion, x, y, area))
+                                 sourceSlot, column, pickupRegion, x, y, area,
+                                 psdFl, psdFr, psdSl, psdSr))
       {
         foundAny = true;
       }
@@ -2042,7 +2099,7 @@ uint8_t buildMissionPickTasks(StorageDetection detections[],
 {
   bool targetAssigned[MissionConfig::MAX_MISSION_BLOCKS] = {false};
   uint8_t taskCount = 0;
-  uint8_t currentColumn = startColumn;
+  (void)startColumn;
 
   for (uint8_t i = 0; i < detectionCount; i++)
     detections[i].assigned = false;
@@ -2051,7 +2108,7 @@ uint8_t buildMissionPickTasks(StorageDetection detections[],
   {
     uint8_t bestDetection = MissionConfig::MAX_MISSION_BLOCKS;
     uint8_t bestTarget = MissionConfig::MAX_MISSION_BLOCKS;
-    int16_t bestDistance = 32767;
+    uint8_t bestColumn = 0;
     uint32_t bestArea = 0;
 
     for (uint8_t i = 0; i < detectionCount; i++)
@@ -2063,14 +2120,13 @@ uint8_t buildMissionPickTasks(StorageDetection detections[],
       if (targetIndex >= MissionConfig::MAX_MISSION_BLOCKS)
         continue;
 
-      int16_t distance = taskDistanceScore(currentColumn, detections[i]);
       if (bestDetection >= MissionConfig::MAX_MISSION_BLOCKS ||
-          distance < bestDistance ||
-          (distance == bestDistance && detections[i].area > bestArea))
+          detections[i].column > bestColumn ||
+          (detections[i].column == bestColumn && detections[i].area > bestArea))
       {
         bestDetection = i;
         bestTarget = targetIndex;
-        bestDistance = distance;
+        bestColumn = detections[i].column;
         bestArea = detections[i].area;
       }
     }
@@ -2091,6 +2147,10 @@ uint8_t buildMissionPickTasks(StorageDetection detections[],
     task.x = detection.x;
     task.y = detection.y;
     task.area = detection.area;
+    task.psdFl = detection.psdFl;
+    task.psdFr = detection.psdFr;
+    task.psdSl = detection.psdSl;
+    task.psdSr = detection.psdSr;
     task.found = true;
 
     DEBUG_SERIAL.print(F("{\"type\":\"mission-pick-task\",\"index\":"));
@@ -2107,11 +2167,17 @@ uint8_t buildMissionPickTasks(StorageDetection detections[],
     DEBUG_SERIAL.print(task.column);
     DEBUG_SERIAL.print(F(",\"layer\":\""));
     DEBUG_SERIAL.print(storagePickupRegionUsesUpperGrip(task.pickupRegion) ? F("upper") : F("lower"));
-    DEBUG_SERIAL.println(F("\"}"));
+    DEBUG_SERIAL.print(F("\",\"x\":"));
+    DEBUG_SERIAL.print(task.x);
+    DEBUG_SERIAL.print(F(",\"y\":"));
+    DEBUG_SERIAL.print(task.y);
+    DEBUG_SERIAL.print(F(",\"area\":"));
+    DEBUG_SERIAL.print(task.area);
+    DEBUG_SERIAL.print(F(","));
+    printPsdSnapshotJsonFields(task.psdFl, task.psdFr, task.psdSl, task.psdSr);
+    DEBUG_SERIAL.println(F("}"));
 
-    // 첫 집기는 survey가 끝난 현재 열을 기준으로 고르고,
-    // 이후 집기는 배치 후 적재함 기준 위치(1열)로 돌아온다고 본다.
-    currentColumn = 1;
+    // Survey 기준으로 가장 먼 열부터 처리해 후반 이동/재정렬 부담을 줄인다.
   }
 
   return taskCount;

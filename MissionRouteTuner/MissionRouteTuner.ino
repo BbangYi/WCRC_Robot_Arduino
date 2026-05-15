@@ -124,6 +124,10 @@ struct MissionStorageSurveyDetection {
   int16_t x;
   int16_t y;
   uint32_t area;
+  int16_t psdFl;
+  int16_t psdFr;
+  int16_t psdSl;
+  int16_t psdSr;
   bool assigned;
 };
 MissionStorageSurveyDetection missionSurveyDetections[MissionConfig::MAX_MISSION_BLOCKS] = {};
@@ -6162,7 +6166,8 @@ bool upsertMissionSurveyDetection(uint8_t signature,
                                   uint8_t pickupRegion,
                                   int16_t x,
                                   int16_t y,
-                                  uint32_t area) {
+                                  uint32_t area,
+                                  const PsdSnapshot &psdSnapshot) {
   for (uint8_t i = 0; i < missionSurveyDetectionCount; i++) {
     MissionStorageSurveyDetection &detection = missionSurveyDetections[i];
     if (detection.signature == signature && detection.sourceSlot == sourceSlot) {
@@ -6172,6 +6177,10 @@ bool upsertMissionSurveyDetection(uint8_t signature,
         detection.x = x;
         detection.y = y;
         detection.area = area;
+        detection.psdFl = psdSnapshot.fl;
+        detection.psdFr = psdSnapshot.fr;
+        detection.psdSl = psdSnapshot.sl;
+        detection.psdSr = psdSnapshot.sr;
       }
       return true;
     }
@@ -6191,6 +6200,10 @@ bool upsertMissionSurveyDetection(uint8_t signature,
   detection.x = x;
   detection.y = y;
   detection.area = area;
+  detection.psdFl = psdSnapshot.fl;
+  detection.psdFr = psdSnapshot.fr;
+  detection.psdSl = psdSnapshot.sl;
+  detection.psdSr = psdSnapshot.sr;
   detection.assigned = false;
   return true;
 }
@@ -6214,6 +6227,15 @@ void printMissionSurveyDetectionJson(const MissionStorageSurveyDetection &detect
   DEBUG_SERIAL.print(detection.y);
   DEBUG_SERIAL.print(F(",\"area\":"));
   DEBUG_SERIAL.print(detection.area);
+  DEBUG_SERIAL.print(F(",\"psd\":{\"fl\":"));
+  DEBUG_SERIAL.print(detection.psdFl);
+  DEBUG_SERIAL.print(F(",\"fr\":"));
+  DEBUG_SERIAL.print(detection.psdFr);
+  DEBUG_SERIAL.print(F(",\"sl\":"));
+  DEBUG_SERIAL.print(detection.psdSl);
+  DEBUG_SERIAL.print(F(",\"sr\":"));
+  DEBUG_SERIAL.print(detection.psdSr);
+  DEBUG_SERIAL.print(F("}"));
   DEBUG_SERIAL.println(F("}"));
 }
 
@@ -6260,6 +6282,9 @@ bool commandMissionSurveyScanCurrentColumn(uint8_t signatureMap) {
   DEBUG_SERIAL.println(minArea);
 
   for (uint8_t frame = 0; frame < frames; frame++) {
+    PsdSnapshot psdSnapshot;
+    readAllPSDSensors(&psdSnapshot);
+
     pixy.ccc.getBlocks(true, signatureMap);
     DEBUG_SERIAL.print(F("  frame "));
     DEBUG_SERIAL.print(frame + 1);
@@ -6294,7 +6319,8 @@ bool commandMissionSurveyScanCurrentColumn(uint8_t signatureMap) {
       }
       DEBUG_SERIAL.println(F(" -> accept"));
       if (upsertMissionSurveyDetection(sig, sourceSlot, missionStorageColumn,
-                                       pickupRegion, x, y, area)) {
+                                       pickupRegion, x, y, area,
+                                       psdSnapshot)) {
         foundAny = true;
       }
     }
@@ -6365,6 +6391,125 @@ bool commandMissionSurvey() {
   return true;
 }
 
+bool commandMissionColumnPsdAverage(const String &input) {
+  long column = missionStorageColumn;
+  long samples = 40;
+  long intervalMs = 50;
+
+  if (column < 1 || column > 4) column = 1;
+  if (tokenCount(input) >= 3 &&
+      !parseLongStrict(tokenAt(input, 2), &column)) {
+    DEBUG_SERIAL.println(F("사용법: mission columnpsd [column] [samples] [intervalMs]"));
+    DEBUG_SERIAL.println(F("예시: mission columnpsd 1 40 50"));
+    return false;
+  }
+  if (tokenCount(input) >= 4 &&
+      !parseLongStrict(tokenAt(input, 3), &samples)) {
+    DEBUG_SERIAL.println(F("사용법: mission columnpsd [column] [samples] [intervalMs]"));
+    return false;
+  }
+  if (tokenCount(input) >= 5 &&
+      !parseLongStrict(tokenAt(input, 4), &intervalMs)) {
+    DEBUG_SERIAL.println(F("사용법: mission columnpsd [column] [samples] [intervalMs]"));
+    return false;
+  }
+  if (column < 1 || column > 4) {
+    DEBUG_SERIAL.println(F("[제한] column은 1~4 범위입니다."));
+    return false;
+  }
+  if (samples < 1 || samples > 300) {
+    DEBUG_SERIAL.println(F("[제한] samples는 1~300 범위입니다."));
+    return false;
+  }
+  if (intervalMs < 5 || intervalMs > 1000) {
+    DEBUG_SERIAL.println(F("[제한] intervalMs는 5~1000ms 범위입니다."));
+    return false;
+  }
+
+  int32_t sumFl = 0;
+  int32_t sumFr = 0;
+  int32_t sumSl = 0;
+  int32_t sumSr = 0;
+  int16_t minFl = 32767;
+  int16_t minFr = 32767;
+  int16_t minSl = 32767;
+  int16_t minSr = 32767;
+  int16_t maxFl = -1;
+  int16_t maxFr = -1;
+  int16_t maxSl = -1;
+  int16_t maxSr = -1;
+
+  DEBUG_SERIAL.print(F("[mission columnpsd] column="));
+  DEBUG_SERIAL.print(column);
+  DEBUG_SERIAL.print(F(", samples="));
+  DEBUG_SERIAL.print(samples);
+  DEBUG_SERIAL.print(F(", intervalMs="));
+  DEBUG_SERIAL.println(intervalMs);
+
+  for (long i = 0; i < samples; i++) {
+    PsdSnapshot snapshot;
+    readAllPSDSensors(&snapshot);
+    sumFl += snapshot.fl;
+    sumFr += snapshot.fr;
+    sumSl += snapshot.sl;
+    sumSr += snapshot.sr;
+    if (snapshot.fl < minFl) minFl = snapshot.fl;
+    if (snapshot.fr < minFr) minFr = snapshot.fr;
+    if (snapshot.sl < minSl) minSl = snapshot.sl;
+    if (snapshot.sr < minSr) minSr = snapshot.sr;
+    if (snapshot.fl > maxFl) maxFl = snapshot.fl;
+    if (snapshot.fr > maxFr) maxFr = snapshot.fr;
+    if (snapshot.sl > maxSl) maxSl = snapshot.sl;
+    if (snapshot.sr > maxSr) maxSr = snapshot.sr;
+    if (i + 1 < samples && !interruptibleDelay((unsigned long)intervalMs)) {
+      return false;
+    }
+  }
+
+  DEBUG_SERIAL.print(F("  avg FL/FR/SL/SR="));
+  DEBUG_SERIAL.print((float)sumFl / samples, 2);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.print((float)sumFr / samples, 2);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.print((float)sumSl / samples, 2);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.println((float)sumSr / samples, 2);
+  DEBUG_SERIAL.print(F("{\"type\":\"mission-column-psd\",\"column\":"));
+  DEBUG_SERIAL.print(column);
+  DEBUG_SERIAL.print(F(",\"currentColumn\":"));
+  DEBUG_SERIAL.print(missionStorageColumn);
+  DEBUG_SERIAL.print(F(",\"samples\":"));
+  DEBUG_SERIAL.print(samples);
+  DEBUG_SERIAL.print(F(",\"intervalMs\":"));
+  DEBUG_SERIAL.print(intervalMs);
+  DEBUG_SERIAL.print(F(",\"avg\":{\"fl\":"));
+  DEBUG_SERIAL.print((float)sumFl / samples, 2);
+  DEBUG_SERIAL.print(F(",\"fr\":"));
+  DEBUG_SERIAL.print((float)sumFr / samples, 2);
+  DEBUG_SERIAL.print(F(",\"sl\":"));
+  DEBUG_SERIAL.print((float)sumSl / samples, 2);
+  DEBUG_SERIAL.print(F(",\"sr\":"));
+  DEBUG_SERIAL.print((float)sumSr / samples, 2);
+  DEBUG_SERIAL.print(F("},\"min\":{\"fl\":"));
+  DEBUG_SERIAL.print(minFl);
+  DEBUG_SERIAL.print(F(",\"fr\":"));
+  DEBUG_SERIAL.print(minFr);
+  DEBUG_SERIAL.print(F(",\"sl\":"));
+  DEBUG_SERIAL.print(minSl);
+  DEBUG_SERIAL.print(F(",\"sr\":"));
+  DEBUG_SERIAL.print(minSr);
+  DEBUG_SERIAL.print(F("},\"max\":{\"fl\":"));
+  DEBUG_SERIAL.print(maxFl);
+  DEBUG_SERIAL.print(F(",\"fr\":"));
+  DEBUG_SERIAL.print(maxFr);
+  DEBUG_SERIAL.print(F(",\"sl\":"));
+  DEBUG_SERIAL.print(maxSl);
+  DEBUG_SERIAL.print(F(",\"sr\":"));
+  DEBUG_SERIAL.print(maxSr);
+  DEBUG_SERIAL.println(F("}}"));
+  return true;
+}
+
 uint8_t firstUnplannedMissionQueueIndexForSignature(bool targetAssigned[], uint8_t signature) {
   for (uint8_t i = 0; i < missionQueueCount; i++) {
     if (missionQueueCompleted[i] || targetAssigned[i]) continue;
@@ -6388,7 +6533,6 @@ bool commandMissionPlan() {
   uint8_t plannedSourceSlots[MissionConfig::MAX_MISSION_BLOCKS] = {0};
   uint8_t plannedGoalSlots[MissionConfig::MAX_MISSION_BLOCKS] = {0};
   uint8_t plannedCount = 0;
-  uint8_t currentColumn = missionSurveyEndColumn;
 
   for (uint8_t i = 0; i < missionSurveyDetectionCount; i++) {
     missionSurveyDetections[i].assigned = false;
@@ -6397,7 +6541,7 @@ bool commandMissionPlan() {
   while (plannedCount < missionQueueCount) {
     uint8_t bestDetection = MissionConfig::MAX_MISSION_BLOCKS;
     uint8_t bestQueueIndex = 0;
-    int16_t bestDistance = 32767;
+    uint8_t bestColumn = 0;
     uint32_t bestArea = 0;
 
     for (uint8_t i = 0; i < missionSurveyDetectionCount; i++) {
@@ -6407,13 +6551,12 @@ bool commandMissionPlan() {
         firstUnplannedMissionQueueIndexForSignature(targetAssigned,
                                                     detection.signature);
       if (queueIndex == 0) continue;
-      int16_t distance = abs((int)detection.column - (int)currentColumn);
       if (bestDetection >= MissionConfig::MAX_MISSION_BLOCKS ||
-          distance < bestDistance ||
-          (distance == bestDistance && detection.area > bestArea)) {
+          detection.column > bestColumn ||
+          (detection.column == bestColumn && detection.area > bestArea)) {
         bestDetection = i;
         bestQueueIndex = queueIndex;
-        bestDistance = distance;
+        bestColumn = detection.column;
         bestArea = detection.area;
       }
     }
@@ -6451,9 +6594,16 @@ bool commandMissionPlan() {
     DEBUG_SERIAL.print(detection.y);
     DEBUG_SERIAL.print(F(",\"area\":"));
     DEBUG_SERIAL.print(detection.area);
+    DEBUG_SERIAL.print(F(",\"psd\":{\"fl\":"));
+    DEBUG_SERIAL.print(detection.psdFl);
+    DEBUG_SERIAL.print(F(",\"fr\":"));
+    DEBUG_SERIAL.print(detection.psdFr);
+    DEBUG_SERIAL.print(F(",\"sl\":"));
+    DEBUG_SERIAL.print(detection.psdSl);
+    DEBUG_SERIAL.print(F(",\"sr\":"));
+    DEBUG_SERIAL.print(detection.psdSr);
+    DEBUG_SERIAL.print(F("}"));
     DEBUG_SERIAL.println(F("}"));
-
-    currentColumn = 1;
   }
 
   if (plannedCount == 0) {
@@ -6486,7 +6636,7 @@ bool commandMissionPlan() {
   missionColumnSearchMissColumn = 0;
   clearMissionColumnScanDecision();
   setMissionBranchDefaultsForCurrentBlock();
-  DEBUG_SERIAL.println(F("[mission plan] sourceSlot을 goalSlot으로 쓰는 실행 queue를 적용했습니다."));
+  DEBUG_SERIAL.println(F("[mission plan] 높은 열부터 sourceSlot=goalSlot으로 쓰는 실행 queue를 적용했습니다."));
   printMissionQueueJsonLine();
   turnOnLEDGreen500ms();
   return true;
@@ -7328,6 +7478,12 @@ bool commandMission(const String &input) {
     printMissionPrompt();
     return true;
   }
+  if (sub == "columnpsd" || sub == "colpsd" || sub == "psdavg" ||
+      sub == "열psd" || sub == "열평균") {
+    bool ok = commandMissionColumnPsdAverage(input);
+    printMissionPrompt();
+    return ok;
+  }
   if (sub == "columnstep" || sub == "colstep" || sub == "열이동") {
     float stepMm = 0.0;
     long speedMmPerSec = 0;
@@ -7519,7 +7675,7 @@ bool commandMission(const String &input) {
     return true;
   }
 
-  DEBUG_SERIAL.println(F("사용법: mission start [quick]|run storage|next|rescan|accept|survey|plan|column <1~4>|columnstep <mm> <mm/s>|columnscan|align|gripalign|placealign|undo|finish|reset"));
+  DEBUG_SERIAL.println(F("사용법: mission start [quick]|run storage|next|rescan|accept|survey|plan|column <1~4>|columnpsd|columnstep <mm> <mm/s>|columnscan|align|gripalign|placealign|undo|finish|reset"));
   DEBUG_SERIAL.println(F("보조: mission button on/off|auto|upper|lower|slot <1~8>|block next|goto <stage>"));
   return false;
 }
@@ -8093,6 +8249,7 @@ void commandGuideMain() {
   DEBUG_SERIAL.println(F("  mission gripdepth <upperMm> <lowerMm> [speed]: 그립 직전 추가 전진 깊이"));
   DEBUG_SERIAL.println(F("  mission placealign <sl> <fr> [tol]: 미션수행존 배치 SL+FR 기준"));
   DEBUG_SERIAL.println(F("  mission columnstep <mm> <mm/s> : 열 이동량/속도 테스트값"));
+  DEBUG_SERIAL.println(F("  mission columnpsd [col] [n] [ms]: 현재 위치 PSD 평균/min/max JSON 출력"));
   DEBUG_SERIAL.println(F("  mission columnright/columnleft : columnstep 기준 한 칸 수동 이동"));
   DEBUG_SERIAL.println(F("  mission jog <dir> <mm> <mm/s>  : 정위치에서 임의 보정 이동"));
   DEBUG_SERIAL.println(F("  mission storagepath <f> <e> <r>: 적재함 접근 고정거리 테스트"));
@@ -8332,6 +8489,7 @@ void commandHelpMain() {
   DEBUG_SERIAL.println(F("  mission survey | mission plan : 적재함 전체 스캔 후 sourceSlot 기반 queue 적용"));
   DEBUG_SERIAL.println(F("  mission column <1~4>          : 현재 적재함 열 기준 지정"));
   DEBUG_SERIAL.println(F("  mission columnstep <mm> <mm/s>: 열 이동량/속도 테스트"));
+  DEBUG_SERIAL.println(F("  mission columnpsd [c] [n] [ms]: 열별 PSD 평균 JSON 출력"));
   DEBUG_SERIAL.println(F("  mission columnscan            : 현재 열 Pixy 스캔/판정 저장"));
   DEBUG_SERIAL.println(F("  mission undo                  : 가능한 마지막 고정 거리 이동만 반대 실행"));
   DEBUG_SERIAL.println(F("  mission finish                : 현재 위치에서 후진 finish"));
