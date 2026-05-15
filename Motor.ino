@@ -1360,6 +1360,60 @@ bool alignStorageWithPsdTarget(const __FlashStringHelper *title,
   return true;
 }
 
+bool alignStorageFrontDepthWithPsdTarget(const __FlashStringHelper *title,
+                                         int16_t targetFl,
+                                         int16_t targetFr,
+                                         int16_t tolerance)
+{
+  DEBUG_SERIAL.println(title);
+  DEBUG_SERIAL.print(F("  target FL/FR/tol="));
+  DEBUG_SERIAL.print(targetFl);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.print(targetFr);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.print(tolerance);
+  DEBUG_SERIAL.println(F(" (SL/SR ignored for motion)"));
+  ChangeMobilebaseMode2VelocityControlMode(dxl);
+
+  int16_t slVal = 0;
+  int16_t flVal = 0;
+  int16_t frVal = 0;
+  int16_t flError = 0;
+  int16_t frError = 0;
+  unsigned long t0 = millis();
+  while (1)
+  {
+    GetValueFromSideLeftPSDSensor(&slVal);
+    GetValueFromFrontLeftPSDSensor(&flVal);
+    GetValueFromFrontRightPSDSensor(&frVal);
+    flError = flVal - targetFl;
+    frError = frVal - targetFr;
+    if (!GoForwardWithTwoSensors(dxl, flError, frError, tolerance,
+                                 CFG.speed.psdCorrectionSpeed))
+      break;
+    if (millis() - t0 > CFG.timeout.psdLoopMs)
+    {
+      DEBUG_SERIAL.println(F("  PSD 전후 깊이 정렬 타임아웃"));
+      break;
+    }
+    delay(10);
+  }
+
+  SetMobileGoalVelocityForSyncWrite(dxl, 0, 0, 0, 0);
+  DEBUG_SERIAL.print(F("  PSD 깊이 정렬 종료 SL(ref)="));
+  DEBUG_SERIAL.print(slVal);
+  DEBUG_SERIAL.print(F(" FL="));
+  DEBUG_SERIAL.print(flVal);
+  DEBUG_SERIAL.print(F(" FR="));
+  DEBUG_SERIAL.print(frVal);
+  DEBUG_SERIAL.print(F(" FLerr="));
+  DEBUG_SERIAL.print(flError);
+  DEBUG_SERIAL.print(F(" FRerr="));
+  DEBUG_SERIAL.println(frError);
+  delay(CFG.wait.driveSettleMs);
+  return true;
+}
+
 bool alignStorageScanPosition(const __FlashStringHelper *title)
 {
   return alignStorageWithPsdTarget(title,
@@ -1371,11 +1425,10 @@ bool alignStorageScanPosition(const __FlashStringHelper *title)
 
 bool alignStorageGripPosition(bool lower)
 {
-  return alignStorageWithPsdTarget(
+  return alignStorageFrontDepthWithPsdTarget(
     lower
-      ? F("    집기 직전: 하층 SL+FL/FR PSD 정렬")
-      : F("    집기 직전: 상층 SL+FL/FR PSD 정렬"),
-    lower ? CFG.psd.lowerGripAlignSl : CFG.psd.gripAlignSl,
+      ? F("    집기 직전: 하층 FL/FR 전후 깊이 정렬")
+      : F("    집기 직전: 상층 FL/FR 전후 깊이 정렬"),
     lower ? CFG.psd.lowerGripAlignFl : CFG.psd.gripAlignFl,
     lower ? CFG.psd.lowerGripAlignFr : CFG.psd.gripAlignFr,
     lower ? CFG.psd.lowerGripAlignTolerance : CFG.psd.gripAlignTolerance);

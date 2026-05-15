@@ -85,8 +85,8 @@ This version targets the WCRC logistics robot 2 sorting mission and keeps the fu
 - `CFG.cameraScan.storageYUpperLowerSplit`: `132`
 - `CFG.psd.alignFl/alignSl/alignFr`: `266 / 354 / 269` (적재함 1열 스캔 기준 위치, SR ignored)
 - `CFG.psd.alignTolerance`: `8`
-- `CFG.psd.gripAlignFl/gripAlignSl/gripAlignFr`: `349 / 359 / 363` (상층 집기 직전)
-- `CFG.psd.lowerGripAlignFl/lowerGripAlignSl/lowerGripAlignFr`: `325 / 354 / 337` (하층 집기 직전)
+- `CFG.psd.gripAlignFl/gripAlignFr`: `349 / 363` (상층 집기 직전 FL/FR 깊이 기준, SL은 참고값)
+- `CFG.psd.lowerGripAlignFl/lowerGripAlignFr`: `325 / 337` (하층 집기 직전 FL/FR 깊이 기준, SL은 참고값)
 - `CFG.psd.missionZoneSl/missionZoneFr`: `635 / 220` (미션수행존 배치 기준, SL+FR)
 - `CFG.psd.missionZoneTolerance`: `8`
 - `CFG.storagePickupRegion`: upper `(129,57)~(180,110)`, lower `(139,155)~(178,207)`, `margin=0`

@@ -69,9 +69,9 @@ SW1             # finish 후진
 - `mission columnscan`으로 현재 열 Pixy storage 스캔을 실행하고 `signature/sourceSlot/goalSlot/pickLayer` 판정을 저장합니다.
 - `pixy alignslow upper|lower [timeoutMs] [minArea] [signatureMap]`은 Motor와 같은 저속 micro-step 중심 정렬을 단독 테스트합니다.
 - `mission align <sl> <fl> <fr> [tol]`은 적재함 1열을 처음 보는 스캔 기준 위치입니다. 현재 기본값은 `mission align 354 266 269 8`입니다.
-- `mission gripalign upper <sl> <fl> <fr> [tol]`은 상층 집기 직전 더 깊이 들어가는 기준 위치입니다. 현재 기본값은 `mission gripalign upper 359 349 363 8`입니다.
-- `mission gripalign lower <sl> <fl> <fr> [tol]`은 하층 집기 직전 기준 위치입니다. 현재 기본값은 `mission gripalign lower 354 325 337 8`입니다.
-- `mission gripalign upper|lower run`으로 현재 위치에서 층별 집기 직전 PSD 정렬만 따로 실행할 수 있습니다.
+- `mission gripalign upper <fl> <fr> [tol]`은 상층 집기 직전 더 깊이 들어가는 FL/FR 전후 깊이 기준입니다. 현재 기본값은 `mission gripalign upper 349 363 8`입니다.
+- `mission gripalign lower <fl> <fr> [tol]`은 하층 집기 직전 FL/FR 전후 깊이 기준입니다. 현재 기본값은 `mission gripalign lower 325 337 8`입니다.
+- `mission gripalign upper|lower run`으로 현재 위치에서 층별 집기 직전 전후 깊이 정렬만 따로 실행할 수 있습니다. 이때 SL/SR은 움직임에 쓰지 않습니다.
 - `mission placealign <sl> <fr> [tol]`은 미션수행존에서 내려놓기 직전 SL+FR 기준 위치입니다. 현재 기본값은 `mission placealign 635 220 8`입니다.
 - `mission placealign run`으로 현재 위치에서 배치 SL+FR 정렬만 따로 실행할 수 있습니다.
 - `mission undo`는 가능한 마지막 고정 거리 열 이동만 반대 방향으로 실행합니다. PSD 정렬, 장애물 접근, 집기, 배치는 자동 원복하지 않습니다.
@@ -191,9 +191,9 @@ help risk
 - `mission instruction 640 700 120`: 선을 더 확실히 밟아야 할 때 final forward 시간을 늘리는 후보입니다.
 - `mission columnstep 72 150`: 적재함 열 이동량/속도 후보를 임시 조정합니다.
 - `mission align 354 266 269 8`: 적재함 1열 스캔 기준 PSD 위치를 임시 조정합니다.
-- `mission gripalign upper 359 349 363 8`: 상층 집기 직전 PSD 위치를 임시 조정합니다.
-- `mission gripalign lower 354 325 337 8`: 하층 집기 직전 PSD 위치를 임시 조정합니다.
-- `mission gripalign upper|lower run`: 층별 집기 직전 PSD 위치로만 이동해 그립 전 거리를 확인합니다.
+- `mission gripalign upper 349 363 8`: 상층 집기 직전 FL/FR 깊이 위치를 임시 조정합니다.
+- `mission gripalign lower 325 337 8`: 하층 집기 직전 FL/FR 깊이 위치를 임시 조정합니다.
+- `mission gripalign upper|lower run`: 층별 집기 직전 FL/FR 깊이 위치로만 이동해 그립 전 거리를 확인합니다.
 - `mission placealign 635 220 8`: 미션수행존 내려놓기 SL+FR 위치를 임시 조정합니다.
 - `mission placealign run`: 배치 SL+FR 위치로만 이동해 내려놓기 전 거리를 확인합니다.
 - `pixy scan`: Pixy가 현재 보는 signature, x/y, 면적을 출력합니다.
@@ -287,7 +287,7 @@ pixy storage all 10 80
 - `lower`: lower boundary만 봅니다.
 - `all`: upper/lower 전체 판정을 확인합니다.
 - `pixy align`은 boundary 안에 들어오는 것에서 끝내지 않고, boundary 중심점 기준 `centerToleranceX/Y` 안으로 들어올 때까지 보정합니다.
-- 미션 자동 집기 흐름은 `mission gripalign upper|lower` PSD 위치로 먼저 붙은 뒤 `pixy align`으로 x/y 중심을 미세 조정합니다.
+- 미션 자동 집기 흐름은 Pixy 중심을 맞춘 뒤 `mission gripalign upper|lower` FL/FR 깊이 기준으로 앞으로 붙습니다. SL 정렬은 하지 않아서 옆으로 틀어지는 일을 줄입니다.
 
 정렬 시간 테스트:
 

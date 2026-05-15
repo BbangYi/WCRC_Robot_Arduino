@@ -53,13 +53,15 @@ public:
     int16_t alignFr = 269;
     int16_t alignTolerance = 8;
 
-    // Upper-row grip position.
+    // Upper-row grip depth position. FL/FR are used for front-depth control.
+    // SL is kept only as a reference/log value so grip approach does not strafe
+    // sideways after Pixy center alignment.
     int16_t gripAlignFl = 349;
     int16_t gripAlignSl = 359;
     int16_t gripAlignFr = 363;
     int16_t gripAlignTolerance = 8;
 
-    // Lower-row grip position.
+    // Lower-row grip depth position. FL/FR are used; SL is reference/log only.
     int16_t lowerGripAlignFl = 325;
     int16_t lowerGripAlignSl = 354;
     int16_t lowerGripAlignFr = 337;

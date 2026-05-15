@@ -1672,7 +1672,7 @@ void printJsonTunerCalibration() {
   DEBUG_SERIAL.print(missionGripAlignSl);
   DEBUG_SERIAL.print(F(",\"tolerance\":"));
   DEBUG_SERIAL.print(missionGripAlignTolerance);
-  DEBUG_SERIAL.print(F(",\"sideRightUsed\":false},\"lowerGripAlign\":{\"fl\":"));
+  DEBUG_SERIAL.print(F(",\"sideLeftUsedForMotion\":false,\"sideRightUsed\":false},\"lowerGripAlign\":{\"fl\":"));
   DEBUG_SERIAL.print(missionLowerGripAlignFl);
   DEBUG_SERIAL.print(F(",\"fr\":"));
   DEBUG_SERIAL.print(missionLowerGripAlignFr);
@@ -1680,7 +1680,7 @@ void printJsonTunerCalibration() {
   DEBUG_SERIAL.print(missionLowerGripAlignSl);
   DEBUG_SERIAL.print(F(",\"tolerance\":"));
   DEBUG_SERIAL.print(missionLowerGripAlignTolerance);
-  DEBUG_SERIAL.print(F(",\"sideRightUsed\":false},\"placeAlign\":{\"sl\":"));
+  DEBUG_SERIAL.print(F(",\"sideLeftUsedForMotion\":false,\"sideRightUsed\":false},\"placeAlign\":{\"sl\":"));
   DEBUG_SERIAL.print(missionPlaceSl);
   DEBUG_SERIAL.print(F(",\"fr\":"));
   DEBUG_SERIAL.print(missionPlaceFr);
@@ -4513,24 +4513,24 @@ void printMissionAlignStatus() {
 }
 
 void printMissionGripAlignStatus() {
-  DEBUG_SERIAL.print(F("[mission gripalign] upper SL="));
-  DEBUG_SERIAL.print(missionGripAlignSl);
-  DEBUG_SERIAL.print(F(", FL="));
+  DEBUG_SERIAL.print(F("[mission gripalign] upper FL="));
   DEBUG_SERIAL.print(missionGripAlignFl);
   DEBUG_SERIAL.print(F(", FR="));
   DEBUG_SERIAL.print(missionGripAlignFr);
+  DEBUG_SERIAL.print(F(", SL(ref)="));
+  DEBUG_SERIAL.print(missionGripAlignSl);
   DEBUG_SERIAL.print(F(", tolerance="));
   DEBUG_SERIAL.print(missionGripAlignTolerance);
-  DEBUG_SERIAL.println(F(" (SR ignored)"));
-  DEBUG_SERIAL.print(F("                    lower SL="));
-  DEBUG_SERIAL.print(missionLowerGripAlignSl);
-  DEBUG_SERIAL.print(F(", FL="));
+  DEBUG_SERIAL.println(F(" (SL/SR ignored for motion)"));
+  DEBUG_SERIAL.print(F("                    lower FL="));
   DEBUG_SERIAL.print(missionLowerGripAlignFl);
   DEBUG_SERIAL.print(F(", FR="));
   DEBUG_SERIAL.print(missionLowerGripAlignFr);
+  DEBUG_SERIAL.print(F(", SL(ref)="));
+  DEBUG_SERIAL.print(missionLowerGripAlignSl);
   DEBUG_SERIAL.print(F(", tolerance="));
   DEBUG_SERIAL.print(missionLowerGripAlignTolerance);
-  DEBUG_SERIAL.println(F(" (SR ignored)"));
+  DEBUG_SERIAL.println(F(" (SL/SR ignored for motion)"));
   DEBUG_SERIAL.print(F("{\"type\":\"mission-gripalign\",\"sl\":"));
   DEBUG_SERIAL.print(missionGripAlignSl);
   DEBUG_SERIAL.print(F(",\"fl\":"));
@@ -4547,7 +4547,7 @@ void printMissionGripAlignStatus() {
   DEBUG_SERIAL.print(missionLowerGripAlignFr);
   DEBUG_SERIAL.print(F(",\"tolerance\":"));
   DEBUG_SERIAL.print(missionLowerGripAlignTolerance);
-  DEBUG_SERIAL.println(F(",\"sideRightUsed\":false}}"));
+  DEBUG_SERIAL.println(F(",\"sideLeftUsedForMotion\":false,\"sideRightUsed\":false}}"));
 }
 
 bool commandMissionAlignTuning(const String &input) {
@@ -4697,21 +4697,26 @@ bool commandMissionGripAlignTuning(const String &input) {
     readAllPSDSensors(&snapshot);
     setMissionGripAlignTarget(lower, snapshot.sl, snapshot.fl, snapshot.fr, (int16_t)tolerance);
     DEBUG_SERIAL.println(lower
-      ? F("[mission gripalign] 현재 PSD 값을 하층 집기 직전 정렬 기준으로 적용했습니다. SR은 저장하지 않습니다.")
-      : F("[mission gripalign] 현재 PSD 값을 상층 집기 직전 정렬 기준으로 적용했습니다. SR은 저장하지 않습니다."));
+      ? F("[mission gripalign] 현재 FL/FR 값을 하층 집기 깊이 기준으로 적용했습니다. SL은 참고값으로만 저장합니다.")
+      : F("[mission gripalign] 현재 FL/FR 값을 상층 집기 깊이 기준으로 적용했습니다. SL은 참고값으로만 저장합니다."));
     printMissionGripAlignStatus();
     printPsdStatus();
     return true;
   }
 
-  if (tokenCount(input) < 5 + argOffset) {
+  uint8_t count = tokenCount(input);
+  uint8_t firstValueIndex = 2 + argOffset;
+  uint8_t numericCount = count > firstValueIndex ? count - firstValueIndex : 0;
+
+  if (numericCount < 2) {
     printMissionGripAlignStatus();
-    DEBUG_SERIAL.println(F("사용법: mission gripalign [upper|lower] <targetSl> <targetFl> <targetFr> [tolerance]"));
+    DEBUG_SERIAL.println(F("사용법: mission gripalign [upper|lower] <targetFl> <targetFr> [tolerance]"));
+    DEBUG_SERIAL.println(F("       legacy: mission gripalign [upper|lower] <targetSl> <targetFl> <targetFr> <tolerance>"));
     DEBUG_SERIAL.println(F("       mission gripalign [upper|lower] current [tolerance]"));
     DEBUG_SERIAL.println(F("       mission gripalign [upper|lower] run"));
-    DEBUG_SERIAL.println(F("예시: mission gripalign upper 359 349 363 8"));
-    DEBUG_SERIAL.println(F("예시: mission gripalign lower 354 325 337 8"));
-    DEBUG_SERIAL.println(F("Side-right PSD는 출력만 보고, 집기 정렬 제어에는 사용하지 않습니다."));
+    DEBUG_SERIAL.println(F("예시: mission gripalign upper 349 363 8"));
+    DEBUG_SERIAL.println(F("예시: mission gripalign lower 325 337 8"));
+    DEBUG_SERIAL.println(F("집기 직전 이동은 FL/FR 전후 깊이만 맞추며, SL/SR은 출력 참고값입니다."));
     return true;
   }
 
@@ -4723,18 +4728,30 @@ bool commandMissionGripAlignTuning(const String &input) {
   int16_t currentFr = 0;
   int16_t currentTolerance = 0;
   readMissionGripAlignTarget(lower, &currentSl, &currentFl, &currentFr, &currentTolerance);
+  targetSl = currentSl;
   long tolerance = currentTolerance;
-  if (!parseLongStrict(tokenAt(input, 2 + argOffset), &targetSl) ||
-      !parseLongStrict(tokenAt(input, 3 + argOffset), &targetFl) ||
-      !parseLongStrict(tokenAt(input, 4 + argOffset), &targetFr)) {
-    DEBUG_SERIAL.println(F("사용법: mission gripalign [upper|lower] <targetSl> <targetFl> <targetFr> [tolerance]"));
-    return false;
+
+  if (numericCount >= 4) {
+    if (!parseLongStrict(tokenAt(input, firstValueIndex), &targetSl) ||
+        !parseLongStrict(tokenAt(input, firstValueIndex + 1), &targetFl) ||
+        !parseLongStrict(tokenAt(input, firstValueIndex + 2), &targetFr) ||
+        !parseLongStrict(tokenAt(input, firstValueIndex + 3), &tolerance)) {
+      DEBUG_SERIAL.println(F("사용법: mission gripalign [upper|lower] <targetFl> <targetFr> [tolerance]"));
+      return false;
+    }
+  } else {
+    if (!parseLongStrict(tokenAt(input, firstValueIndex), &targetFl) ||
+        !parseLongStrict(tokenAt(input, firstValueIndex + 1), &targetFr)) {
+      DEBUG_SERIAL.println(F("사용법: mission gripalign [upper|lower] <targetFl> <targetFr> [tolerance]"));
+      return false;
+    }
+    if (numericCount >= 3 &&
+        !parseLongStrict(tokenAt(input, firstValueIndex + 2), &tolerance)) {
+      DEBUG_SERIAL.println(F("사용법: mission gripalign [upper|lower] <targetFl> <targetFr> [tolerance]"));
+      return false;
+    }
   }
-  if (tokenCount(input) >= 6 + argOffset &&
-      !parseLongStrict(tokenAt(input, 5 + argOffset), &tolerance)) {
-    DEBUG_SERIAL.println(F("사용법: mission gripalign [upper|lower] <targetSl> <targetFl> <targetFr> [tolerance]"));
-    return false;
-  }
+
   if (targetSl < 1 || targetSl > 1023 ||
       targetFl < 1 || targetFl > 1023 ||
       targetFr < 1 || targetFr > 1023 ||
@@ -5027,6 +5044,66 @@ bool commandMissionStorageAlignToTarget(const __FlashStringHelper *title,
   return interruptibleDelay(settleMs);
 }
 
+bool commandMissionStorageFrontDepthAlignToTarget(const __FlashStringHelper *title,
+                                                  int16_t targetFl,
+                                                  int16_t targetFr,
+                                                  int16_t tolerance,
+                                                  uint16_t settleMs) {
+  if (!ensureMobileReady()) return false;
+
+  DEBUG_SERIAL.println(title);
+  DEBUG_SERIAL.print(F("  target FL/FR/tol="));
+  DEBUG_SERIAL.print(targetFl);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.print(targetFr);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.print(tolerance);
+  DEBUG_SERIAL.println(F(" (SL/SR ignored for motion)"));
+  DEBUG_SERIAL.print(F("  psd speed="));
+  DEBUG_SERIAL.println(missionMotion.psdCorrectionSpeed);
+  ChangeMobilebaseMode2VelocityControlMode(dxl);
+
+  int16_t slVal = 0;
+  int16_t flVal = 0;
+  int16_t frVal = 0;
+  int16_t flError = 0;
+  int16_t frError = 0;
+  unsigned long startedAt = millis();
+  while (true) {
+    if (checkEmergencyStopInput()) {
+      stopAll(F("[긴급정지] ! 입력"));
+      return false;
+    }
+    readSideLeftPSDSensor(&slVal);
+    readFrontPSDSensors(&flVal, &frVal);
+    flError = flVal - targetFl;
+    frError = frVal - targetFr;
+    if (!GoForwardWithTwoSensors(dxl, flError, frError, tolerance,
+                                 missionMotion.psdCorrectionSpeed)) {
+      break;
+    }
+    if (millis() - startedAt > CFG.timeout.psdLoopMs) {
+      DEBUG_SERIAL.println(F("  PSD 전후 깊이 정렬 타임아웃"));
+      break;
+    }
+    delay(10);
+  }
+
+  stopMobilebase();
+  DEBUG_SERIAL.print(F("  PSD 깊이 정렬 종료 SL(ref)="));
+  DEBUG_SERIAL.print(slVal);
+  DEBUG_SERIAL.print(F(" FL="));
+  DEBUG_SERIAL.print(flVal);
+  DEBUG_SERIAL.print(F(" FR="));
+  DEBUG_SERIAL.print(frVal);
+  DEBUG_SERIAL.print(F(" FLerr="));
+  DEBUG_SERIAL.print(flError);
+  DEBUG_SERIAL.print(F(" FRerr="));
+  DEBUG_SERIAL.println(frError);
+  clearMissionUndoCandidate();
+  return interruptibleDelay(settleMs);
+}
+
 bool commandMissionStorageAlign() {
   return commandMissionStorageAlignToTarget(
     F("[mission move] 적재함 접근 4/4: 스캔 기준 SL+FL/FR PSD 정렬"),
@@ -5040,11 +5117,12 @@ bool commandMissionStorageGripAlignForLayer(bool lower) {
   int16_t targetFr = 0;
   int16_t tolerance = 0;
   readMissionGripAlignTarget(lower, &targetSl, &targetFl, &targetFr, &tolerance);
-  return commandMissionStorageAlignToTarget(
+  (void)targetSl;
+  return commandMissionStorageFrontDepthAlignToTarget(
     lower
-      ? F("[mission move] 집기 직전: 하층 그립 기준 SL+FL/FR PSD 정렬")
-      : F("[mission move] 집기 직전: 상층 그립 기준 SL+FL/FR PSD 정렬"),
-    targetSl, targetFl, targetFr, tolerance, false, false, CFG.wait.driveSettleMs);
+      ? F("[mission move] 집기 직전: 하층 그립 기준 FL/FR 전후 깊이 정렬")
+      : F("[mission move] 집기 직전: 상층 그립 기준 FL/FR 전후 깊이 정렬"),
+    targetFl, targetFr, tolerance, CFG.wait.driveSettleMs);
 }
 
 bool commandMissionStorageGripAlign() {
@@ -7109,20 +7187,22 @@ void printPsdSnapshotLine(const PsdSnapshot &snapshot, const __FlashStringHelper
   DEBUG_SERIAL.print(missionAlignFr);
   DEBUG_SERIAL.print(F(" tol="));
   DEBUG_SERIAL.print(missionAlignTolerance);
-  DEBUG_SERIAL.print(F(" upperGrip SL/FL/FR="));
-  DEBUG_SERIAL.print(missionGripAlignSl);
-  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.print(F(" upperGrip FL/FR(SLref)="));
   DEBUG_SERIAL.print(missionGripAlignFl);
   DEBUG_SERIAL.print(F("/"));
   DEBUG_SERIAL.print(missionGripAlignFr);
+  DEBUG_SERIAL.print(F("("));
+  DEBUG_SERIAL.print(missionGripAlignSl);
+  DEBUG_SERIAL.print(F(")"));
   DEBUG_SERIAL.print(F(" tol="));
   DEBUG_SERIAL.print(missionGripAlignTolerance);
-  DEBUG_SERIAL.print(F(" lowerGrip SL/FL/FR="));
-  DEBUG_SERIAL.print(missionLowerGripAlignSl);
-  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.print(F(" lowerGrip FL/FR(SLref)="));
   DEBUG_SERIAL.print(missionLowerGripAlignFl);
   DEBUG_SERIAL.print(F("/"));
   DEBUG_SERIAL.print(missionLowerGripAlignFr);
+  DEBUG_SERIAL.print(F("("));
+  DEBUG_SERIAL.print(missionLowerGripAlignSl);
+  DEBUG_SERIAL.print(F(")"));
   DEBUG_SERIAL.print(F(" tol="));
   DEBUG_SERIAL.print(missionLowerGripAlignTolerance);
   DEBUG_SERIAL.print(F(" placeSL/FR="));
@@ -7265,24 +7345,24 @@ void printTunerCalibrationStatus() {
   DEBUG_SERIAL.print(F(" / "));
   DEBUG_SERIAL.print(missionAlignTolerance);
   DEBUG_SERIAL.println(F(" (SR ignored)"));
-  DEBUG_SERIAL.print(F("  grip align SL/FL/FR/tol: "));
-  DEBUG_SERIAL.print(missionGripAlignSl);
-  DEBUG_SERIAL.print(F(" / "));
+  DEBUG_SERIAL.print(F("  grip depth FL/FR/tol (SL ref): "));
   DEBUG_SERIAL.print(missionGripAlignFl);
   DEBUG_SERIAL.print(F(" / "));
   DEBUG_SERIAL.print(missionGripAlignFr);
   DEBUG_SERIAL.print(F(" / "));
   DEBUG_SERIAL.print(missionGripAlignTolerance);
-  DEBUG_SERIAL.println(F(" (SR ignored)"));
-  DEBUG_SERIAL.print(F("  lower grip align SL/FL/FR/tol: "));
-  DEBUG_SERIAL.print(missionLowerGripAlignSl);
-  DEBUG_SERIAL.print(F(" / "));
+  DEBUG_SERIAL.print(F(" (SL ref="));
+  DEBUG_SERIAL.print(missionGripAlignSl);
+  DEBUG_SERIAL.println(F(", SL/SR ignored for motion)"));
+  DEBUG_SERIAL.print(F("  lower grip depth FL/FR/tol (SL ref): "));
   DEBUG_SERIAL.print(missionLowerGripAlignFl);
   DEBUG_SERIAL.print(F(" / "));
   DEBUG_SERIAL.print(missionLowerGripAlignFr);
   DEBUG_SERIAL.print(F(" / "));
   DEBUG_SERIAL.print(missionLowerGripAlignTolerance);
-  DEBUG_SERIAL.println(F(" (SR ignored)"));
+  DEBUG_SERIAL.print(F(" (SL ref="));
+  DEBUG_SERIAL.print(missionLowerGripAlignSl);
+  DEBUG_SERIAL.println(F(", SL/SR ignored for motion)"));
   DEBUG_SERIAL.print(F("  grip depth upper/lower: "));
   DEBUG_SERIAL.print(missionUpperGripDepthMm, 2);
   DEBUG_SERIAL.print(F(" / "));
@@ -7443,7 +7523,7 @@ void printMissionSpeedStatus() {
   DEBUG_SERIAL.println(F("       mission scanrate <scanMs> <sampleMs>"));
   DEBUG_SERIAL.println(F("       mission align <targetSl> <targetFl> <targetFr> [tolerance]"));
   DEBUG_SERIAL.println(F("       mission align current [tolerance]"));
-  DEBUG_SERIAL.println(F("       mission gripalign upper|lower <targetSl> <targetFl> <targetFr> [tolerance]"));
+  DEBUG_SERIAL.println(F("       mission gripalign upper|lower <targetFl> <targetFr> [tolerance]"));
   DEBUG_SERIAL.println(F("       mission gripalign upper|lower current|run [tolerance]"));
   DEBUG_SERIAL.println(F("       mission gripdepth <upperMm> <lowerMm> [speed]"));
   DEBUG_SERIAL.println(F("       mission placealign <targetSl> <targetFr> [tolerance]"));
@@ -7619,7 +7699,7 @@ void commandGuideMain() {
   DEBUG_SERIAL.println(F("  mission instruction <sl> <ms> <raw>: 좌측 지시존 정렬/직진 보정"));
   DEBUG_SERIAL.println(F("  mission scanrate <scanMs> <sampleMs>: 미션지시존 스캔 시간/간격"));
   DEBUG_SERIAL.println(F("  mission align <sl> <fl> <fr> [tol]: 적재함 1열 스캔 정렬 기준"));
-  DEBUG_SERIAL.println(F("  mission gripalign upper|lower <sl> <fl> <fr> [tol]: 층별 집기 직전 정렬 기준"));
+  DEBUG_SERIAL.println(F("  mission gripalign upper|lower <fl> <fr> [tol]: 집기 직전 FL/FR 깊이 기준"));
   DEBUG_SERIAL.println(F("  mission gripdepth <upperMm> <lowerMm> [speed]: 그립 직전 추가 전진 깊이"));
   DEBUG_SERIAL.println(F("  mission placealign <sl> <fr> [tol]: 미션수행존 배치 SL+FR 기준"));
   DEBUG_SERIAL.println(F("  mission columnstep <mm> <mm/s> : 열 이동량/속도 테스트값"));
@@ -7885,7 +7965,7 @@ void commandHelpAdvanced() {
   DEBUG_SERIAL.println(F("  mission block next            : 숨김 fallback, 보통 사용하지 않음"));
   DEBUG_SERIAL.println(F("  mission goto <stage>          : start|scan|storage|column|pick|place|realign|finish"));
   DEBUG_SERIAL.println(F("  mission align <sl> <fl> <fr> [tol]: 적재함 스캔 정렬 target 임시 변경"));
-  DEBUG_SERIAL.println(F("  mission gripalign upper|lower <sl> <fl> <fr> [tol]: 층별 집기 직전 target 임시 변경"));
+  DEBUG_SERIAL.println(F("  mission gripalign upper|lower <fl> <fr> [tol]: 집기 직전 FL/FR 깊이 target 변경"));
   DEBUG_SERIAL.println(F("  mission placealign <sl> <fr> [tol]: 미션수행존 배치 SL+FR target 임시 변경"));
   DEBUG_SERIAL.println(F("  pose run|plan|diff|tuneplan|tune|apply|save|restore|confirm|cancel"));
   DEBUG_SERIAL.println(F("  seq initial|storage|camera|pick upper|pick lower|place <1~8>|placeall"));
@@ -8091,7 +8171,7 @@ void commandHelpPsd() {
   DEBUG_SERIAL.println(F("  psd targets"));
   DEBUG_SERIAL.println(F("    instruction/scan align/grip align 기준과 현재 센서값을 함께 출력합니다."));
   DEBUG_SERIAL.println();
-  DEBUG_SERIAL.println(F("정렬 주의: 적재함 스캔/집기 정렬은 SL+FL/FR만 쓰고, SR은 값 확인용으로만 출력합니다."));
+  DEBUG_SERIAL.println(F("정렬 주의: 적재함 스캔 정렬은 SL+FL/FR, 집기 깊이는 FL/FR만 씁니다. SR은 값 확인용입니다."));
   printLine();
 }
 
