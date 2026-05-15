@@ -82,6 +82,7 @@ public:
     // the rack/obstacle earlier than the front-left sensor.
     int16_t storageApproachFrDetectAdc = 220;
     int16_t storageApproachFrLeadDeltaAdc = 20;
+    uint8_t storageApproachFrLeadConfirmSamples = 3;
     int16_t storageApproachSlGateTolerance = 45;
   };
 

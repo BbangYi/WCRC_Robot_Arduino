@@ -889,6 +889,7 @@ void validateMissionConfig()
       CFG.psd.scanSlTolerance <= 0 ||
       CFG.psd.storageApproachFrDetectAdc <= 0 ||
       CFG.psd.storageApproachFrLeadDeltaAdc <= 0 ||
+      CFG.psd.storageApproachFrLeadConfirmSamples == 0 ||
       CFG.psd.storageApproachSlGateTolerance <= 0 ||
       CFG.speed.storageApproachRightSpeed <= 0 ||
       CFG.speed.storageApproachForwardSpeed <= 0 ||
@@ -1547,6 +1548,8 @@ bool runStorageFrGatedDiagonalApproach()
   DEBUG_SERIAL.print(CFG.psd.storageApproachFrDetectAdc);
   DEBUG_SERIAL.print(F(", FR-FL delta="));
   DEBUG_SERIAL.print(CFG.psd.storageApproachFrLeadDeltaAdc);
+  DEBUG_SERIAL.print(F(", confirm samples="));
+  DEBUG_SERIAL.print(CFG.psd.storageApproachFrLeadConfirmSamples);
   DEBUG_SERIAL.print(F(", right/forward raw="));
   DEBUG_SERIAL.print(CFG.speed.storageApproachRightSpeed);
   DEBUG_SERIAL.print(F("/"));
@@ -1557,6 +1560,7 @@ bool runStorageFrGatedDiagonalApproach()
   int16_t flVal = 0;
   int16_t frVal = 0;
   bool frLeadSeen = false;
+  uint8_t frLeadSamples = 0;
   unsigned long t0 = millis();
   while (1)
   {
@@ -1564,7 +1568,17 @@ bool runStorageFrGatedDiagonalApproach()
     GetValueFromFrontLeftPSDSensor(&flVal);
     GetValueFromFrontRightPSDSensor(&frVal);
 
-    frLeadSeen = storageApproachFrLeadDetected(flVal, frVal) || frLeadSeen;
+    if (storageApproachFrLeadDetected(flVal, frVal))
+    {
+      if (frLeadSamples < CFG.psd.storageApproachFrLeadConfirmSamples)
+        frLeadSamples++;
+    }
+    else
+    {
+      frLeadSamples = 0;
+    }
+    frLeadSeen = frLeadSeen ||
+                 frLeadSamples >= CFG.psd.storageApproachFrLeadConfirmSamples;
     bool slGateReady = storageApproachSlGateReady(slVal);
     bool forwardAllowed = frLeadSeen && slGateReady;
     bool frontNear = storageApproachFrontNearScanDepth(flVal, frVal);
@@ -1594,7 +1608,9 @@ bool runStorageFrGatedDiagonalApproach()
   DEBUG_SERIAL.print(F(" FR="));
   DEBUG_SERIAL.print(frVal);
   DEBUG_SERIAL.print(F(" FRlead="));
-  DEBUG_SERIAL.println(frLeadSeen ? F("yes") : F("no"));
+  DEBUG_SERIAL.print(frLeadSeen ? F("yes") : F("no"));
+  DEBUG_SERIAL.print(F(" samples="));
+  DEBUG_SERIAL.println(frLeadSamples);
   delay(CFG.wait.driveSettleMs);
   return frLeadSeen;
 }
