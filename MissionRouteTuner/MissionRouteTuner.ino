@@ -144,6 +144,11 @@ uint16_t missionInstructionScanSampleMs = DEFAULT_INSTRUCTION_SCAN_SAMPLE_MS;
 float missionStorageFirstForwardMm = CFG.storageDrive.firstForwardMm;
 float missionStorageExtraForwardMm = CFG.storageDrive.extraForwardMm;
 float missionStorageRightMm = CFG.storageDrive.rightMm;
+int16_t missionStorageApproachFrDetectAdc = CFG.psd.storageApproachFrDetectAdc;
+int16_t missionStorageApproachFrLeadDeltaAdc = CFG.psd.storageApproachFrLeadDeltaAdc;
+int16_t missionStorageApproachSlGateTolerance = CFG.psd.storageApproachSlGateTolerance;
+int32_t missionStorageApproachRightSpeed = CFG.speed.storageApproachRightSpeed;
+int32_t missionStorageApproachForwardSpeed = CFG.speed.storageApproachForwardSpeed;
 int16_t missionAlignFl = CFG.psd.alignFl;
 int16_t missionAlignFr = CFG.psd.alignFr;
 int16_t missionAlignSl = CFG.psd.alignSl;
@@ -389,6 +394,11 @@ void resetTunerCalibrationToDefaults() {
   missionStorageFirstForwardMm = CFG.storageDrive.firstForwardMm;
   missionStorageExtraForwardMm = CFG.storageDrive.extraForwardMm;
   missionStorageRightMm = CFG.storageDrive.rightMm;
+  missionStorageApproachFrDetectAdc = CFG.psd.storageApproachFrDetectAdc;
+  missionStorageApproachFrLeadDeltaAdc = CFG.psd.storageApproachFrLeadDeltaAdc;
+  missionStorageApproachSlGateTolerance = CFG.psd.storageApproachSlGateTolerance;
+  missionStorageApproachRightSpeed = CFG.speed.storageApproachRightSpeed;
+  missionStorageApproachForwardSpeed = CFG.speed.storageApproachForwardSpeed;
   missionAlignFl = CFG.psd.alignFl;
   missionAlignFr = CFG.psd.alignFr;
   missionAlignSl = CFG.psd.alignSl;
@@ -1734,6 +1744,16 @@ void printJsonMissionMotion() {
   DEBUG_SERIAL.print(missionStorageExtraForwardMm, 2);
   DEBUG_SERIAL.print(F(",\"storageRightMm\":"));
   DEBUG_SERIAL.print(missionStorageRightMm, 2);
+  DEBUG_SERIAL.print(F(",\"storageApproachFrMin\":"));
+  DEBUG_SERIAL.print(missionStorageApproachFrDetectAdc);
+  DEBUG_SERIAL.print(F(",\"storageApproachFrLeadDelta\":"));
+  DEBUG_SERIAL.print(missionStorageApproachFrLeadDeltaAdc);
+  DEBUG_SERIAL.print(F(",\"storageApproachSlGateTolerance\":"));
+  DEBUG_SERIAL.print(missionStorageApproachSlGateTolerance);
+  DEBUG_SERIAL.print(F(",\"storageApproachRightSpeed\":"));
+  DEBUG_SERIAL.print(missionStorageApproachRightSpeed);
+  DEBUG_SERIAL.print(F(",\"storageApproachForwardSpeed\":"));
+  DEBUG_SERIAL.print(missionStorageApproachForwardSpeed);
   DEBUG_SERIAL.print(F(",\"alignFl\":"));
   DEBUG_SERIAL.print(missionAlignFl);
   DEBUG_SERIAL.print(F(",\"alignFr\":"));
@@ -4913,6 +4933,79 @@ bool commandMissionStoragePath(const String &input) {
   return true;
 }
 
+void printMissionStorageApproachGateStatus() {
+  DEBUG_SERIAL.print(F("[mission storagegate] frMin="));
+  DEBUG_SERIAL.print(missionStorageApproachFrDetectAdc);
+  DEBUG_SERIAL.print(F(", frLeadDelta="));
+  DEBUG_SERIAL.print(missionStorageApproachFrLeadDeltaAdc);
+  DEBUG_SERIAL.print(F(", slGateTol="));
+  DEBUG_SERIAL.print(missionStorageApproachSlGateTolerance);
+  DEBUG_SERIAL.print(F(", rightRaw="));
+  DEBUG_SERIAL.print(missionStorageApproachRightSpeed);
+  DEBUG_SERIAL.print(F(", forwardRaw="));
+  DEBUG_SERIAL.println(missionStorageApproachForwardSpeed);
+  DEBUG_SERIAL.print(F("{\"type\":\"mission-storagegate\",\"frMin\":"));
+  DEBUG_SERIAL.print(missionStorageApproachFrDetectAdc);
+  DEBUG_SERIAL.print(F(",\"frLeadDelta\":"));
+  DEBUG_SERIAL.print(missionStorageApproachFrLeadDeltaAdc);
+  DEBUG_SERIAL.print(F(",\"slGateTolerance\":"));
+  DEBUG_SERIAL.print(missionStorageApproachSlGateTolerance);
+  DEBUG_SERIAL.print(F(",\"rightRaw\":"));
+  DEBUG_SERIAL.print(missionStorageApproachRightSpeed);
+  DEBUG_SERIAL.print(F(",\"forwardRaw\":"));
+  DEBUG_SERIAL.print(missionStorageApproachForwardSpeed);
+  DEBUG_SERIAL.println(F("}"));
+}
+
+bool commandMissionStorageGateTuning(const String &input) {
+  if (tokenCount(input) < 5) {
+    printMissionStorageApproachGateStatus();
+    DEBUG_SERIAL.println(F("사용법: mission storagegate <frMin> <frLeadDelta> <slGateTol> [rightRaw] [forwardRaw]"));
+    DEBUG_SERIAL.println(F("예시: mission storagegate 220 20 45 120 80"));
+    return true;
+  }
+
+  long frMin = 0;
+  long frLeadDelta = 0;
+  long slGateTol = 0;
+  long rightRaw = missionStorageApproachRightSpeed;
+  long forwardRaw = missionStorageApproachForwardSpeed;
+  if (!parseLongStrict(tokenAt(input, 2), &frMin) ||
+      !parseLongStrict(tokenAt(input, 3), &frLeadDelta) ||
+      !parseLongStrict(tokenAt(input, 4), &slGateTol)) {
+    DEBUG_SERIAL.println(F("사용법: mission storagegate <frMin> <frLeadDelta> <slGateTol> [rightRaw] [forwardRaw]"));
+    return false;
+  }
+  if (tokenCount(input) >= 6) {
+    if (!parseLongStrict(tokenAt(input, 5), &rightRaw)) {
+      DEBUG_SERIAL.println(F("사용법: mission storagegate <frMin> <frLeadDelta> <slGateTol> [rightRaw] [forwardRaw]"));
+      return false;
+    }
+  }
+  if (tokenCount(input) >= 7 &&
+      !parseLongStrict(tokenAt(input, 6), &forwardRaw)) {
+    DEBUG_SERIAL.println(F("사용법: mission storagegate <frMin> <frLeadDelta> <slGateTol> [rightRaw] [forwardRaw]"));
+    return false;
+  }
+
+  if (frMin < 1 || frMin > 1023 ||
+      frLeadDelta < 1 || frLeadDelta > 300 ||
+      slGateTol < 1 || slGateTol > 200 ||
+      !validateMissionVelocitySpeed(rightRaw) ||
+      !validateMissionVelocitySpeed(forwardRaw)) {
+    DEBUG_SERIAL.println(F("[제한] frMin은 1~1023, delta는 1~300, slGateTol은 1~200 범위입니다."));
+    return false;
+  }
+
+  missionStorageApproachFrDetectAdc = (int16_t)frMin;
+  missionStorageApproachFrLeadDeltaAdc = (int16_t)frLeadDelta;
+  missionStorageApproachSlGateTolerance = (int16_t)slGateTol;
+  missionStorageApproachRightSpeed = (int32_t)rightRaw;
+  missionStorageApproachForwardSpeed = (int32_t)forwardRaw;
+  printMissionStorageApproachGateStatus();
+  return true;
+}
+
 bool commandMissionUndo() {
   if (!missionUndoAvailable) {
     DEBUG_SERIAL.println(F("[mission undo] 되돌릴 수 있는 마지막 고정 거리 이동이 없습니다."));
@@ -4973,6 +5066,232 @@ int16_t storageAlignFrontError(int16_t flVal, int16_t frVal) {
   return storageAlignFrontErrorFor(flVal, frVal,
                                    missionAlignFl, missionAlignFr,
                                    missionAlignTolerance);
+}
+
+bool missionStorageApproachFrLeadDetected(int16_t flVal, int16_t frVal) {
+  return frVal >= missionStorageApproachFrDetectAdc &&
+         (frVal - flVal) >= missionStorageApproachFrLeadDeltaAdc;
+}
+
+bool missionStorageApproachSlGateReady(int16_t slVal) {
+  return slVal <= missionAlignSl + missionStorageApproachSlGateTolerance;
+}
+
+bool missionStorageApproachFrontNearScanDepth(int16_t flVal, int16_t frVal) {
+  int16_t frontError = storageAlignFrontErrorFor(flVal, frVal,
+                                                 missionAlignFl, missionAlignFr,
+                                                 missionAlignTolerance);
+  return frontError >= -(missionAlignTolerance * 3);
+}
+
+void setMissionStorageApproachVelocity(int32_t rightSpeed, int32_t forwardSpeed) {
+  SetMobileGoalVelocityForSyncWrite(dxl,
+                                    forwardSpeed + rightSpeed,
+                                    forwardSpeed - rightSpeed,
+                                    forwardSpeed - rightSpeed,
+                                    forwardSpeed + rightSpeed);
+}
+
+bool commandMissionStorageRightUntilFrLeadDetected() {
+  if (!ensureMobileReady()) return false;
+
+  DEBUG_SERIAL.println(F("[mission move] 적재함 접근 보조: FR>FL 감지까지 우측 이동"));
+  DEBUG_SERIAL.print(F("  FR min="));
+  DEBUG_SERIAL.print(missionStorageApproachFrDetectAdc);
+  DEBUG_SERIAL.print(F(", FR-FL delta="));
+  DEBUG_SERIAL.print(missionStorageApproachFrLeadDeltaAdc);
+  DEBUG_SERIAL.print(F(", right raw="));
+  DEBUG_SERIAL.println(missionStorageApproachRightSpeed);
+
+  ChangeMobilebaseMode2VelocityControlMode(dxl);
+  int16_t flVal = 0;
+  int16_t frVal = 0;
+  unsigned long startedAt = millis();
+  while (true) {
+    if (checkEmergencyStopInput()) {
+      stopAll(F("[긴급정지] ! 입력"));
+      return false;
+    }
+    readFrontPSDSensors(&flVal, &frVal);
+    if (missionStorageApproachFrLeadDetected(flVal, frVal)) {
+      break;
+    }
+    setMissionStorageApproachVelocity(missionStorageApproachRightSpeed, 0);
+    if (millis() - startedAt > CFG.timeout.psdLoopMs) {
+      DEBUG_SERIAL.println(F("  FR>FL 감지 우측 이동 타임아웃"));
+      break;
+    }
+    delay(10);
+  }
+
+  stopMobilebase();
+  DEBUG_SERIAL.print(F("  FR>FL 감지 우측 이동 종료 FL="));
+  DEBUG_SERIAL.print(flVal);
+  DEBUG_SERIAL.print(F(" FR="));
+  DEBUG_SERIAL.print(frVal);
+  DEBUG_SERIAL.print(F(" delta="));
+  DEBUG_SERIAL.println(frVal - flVal);
+  if (!missionStorageApproachFrLeadDetected(flVal, frVal)) {
+    DEBUG_SERIAL.println(F("  [주의] FR>FL 감지 실패. 현재 위치에서 다음 정렬을 계속 시도합니다."));
+  }
+  return interruptibleDelay(CFG.wait.driveSettleMs);
+}
+
+bool commandMissionStorageOpenSideGate() {
+  if (!ensureMobileReady()) return false;
+
+  DEBUG_SERIAL.println(F("[mission move] 적재함 접근 2/4: SL 먼저 벌려 대각선 시작점 확보"));
+  DEBUG_SERIAL.print(F("  target SL="));
+  DEBUG_SERIAL.print(missionAlignSl);
+  DEBUG_SERIAL.print(F(", gate tolerance="));
+  DEBUG_SERIAL.print(missionStorageApproachSlGateTolerance);
+  DEBUG_SERIAL.print(F(", speed="));
+  DEBUG_SERIAL.println(missionStorageApproachRightSpeed);
+
+  ChangeMobilebaseMode2VelocityControlMode(dxl);
+  int16_t slVal = 0;
+  unsigned long startedAt = millis();
+  while (true) {
+    if (checkEmergencyStopInput()) {
+      stopAll(F("[긴급정지] ! 입력"));
+      return false;
+    }
+    readSideLeftPSDSensor(&slVal);
+    if (missionStorageApproachSlGateReady(slVal)) {
+      break;
+    }
+    DriveWithOneSensor(dxl, slVal - missionAlignSl,
+                       missionStorageApproachSlGateTolerance,
+                       DRIVE_DIRECTION_LEFT,
+                       missionStorageApproachRightSpeed);
+    if (millis() - startedAt > CFG.timeout.psdLoopMs) {
+      DEBUG_SERIAL.println(F("  SL 게이트 확보 타임아웃"));
+      break;
+    }
+    delay(10);
+  }
+
+  stopMobilebase();
+  DEBUG_SERIAL.print(F("  SL 게이트 종료 SL="));
+  DEBUG_SERIAL.print(slVal);
+  DEBUG_SERIAL.print(F(" err="));
+  DEBUG_SERIAL.println(slVal - missionAlignSl);
+  interruptibleDelay(CFG.wait.driveSettleMs);
+  return missionStorageApproachSlGateReady(slVal);
+}
+
+bool commandMissionStorageDiagonalApproach() {
+  if (!ensureMobileReady()) return false;
+
+  DEBUG_SERIAL.println(F("[mission move] 적재함 접근 2/4: FR>FL 감지 후 우측+전진 대각선 접근"));
+  DEBUG_SERIAL.print(F("  target SL/FL/FR/tol="));
+  DEBUG_SERIAL.print(missionAlignSl);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.print(missionAlignFl);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.print(missionAlignFr);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.println(missionAlignTolerance);
+  DEBUG_SERIAL.print(F("  FR min/delta="));
+  DEBUG_SERIAL.print(missionStorageApproachFrDetectAdc);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.print(missionStorageApproachFrLeadDeltaAdc);
+  DEBUG_SERIAL.print(F(", right/forward raw="));
+  DEBUG_SERIAL.print(missionStorageApproachRightSpeed);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.println(missionStorageApproachForwardSpeed);
+
+  ChangeMobilebaseMode2VelocityControlMode(dxl);
+  int16_t slVal = 0;
+  int16_t flVal = 0;
+  int16_t frVal = 0;
+  bool frLeadSeen = false;
+  unsigned long startedAt = millis();
+  while (true) {
+    if (checkEmergencyStopInput()) {
+      stopAll(F("[긴급정지] ! 입력"));
+      return false;
+    }
+    readSideLeftPSDSensor(&slVal);
+    readFrontPSDSensors(&flVal, &frVal);
+    frLeadSeen = missionStorageApproachFrLeadDetected(flVal, frVal) || frLeadSeen;
+    bool slGateReady = missionStorageApproachSlGateReady(slVal);
+    bool forwardAllowed = frLeadSeen && slGateReady;
+    bool frontNear = missionStorageApproachFrontNearScanDepth(flVal, frVal);
+    if (forwardAllowed && frontNear) {
+      break;
+    }
+
+    int32_t rightSpeed = 0;
+    if (!frLeadSeen || !slGateReady ||
+        slVal > missionAlignSl + missionAlignTolerance) {
+      rightSpeed = missionStorageApproachRightSpeed;
+    }
+    int32_t forwardSpeed = forwardAllowed ? missionStorageApproachForwardSpeed : 0;
+    setMissionStorageApproachVelocity(rightSpeed, forwardSpeed);
+
+    if (millis() - startedAt > CFG.timeout.psdLoopMs) {
+      DEBUG_SERIAL.println(F("  대각선 접근 타임아웃"));
+      break;
+    }
+    delay(10);
+  }
+
+  stopMobilebase();
+  DEBUG_SERIAL.print(F("  대각선 접근 종료 SL="));
+  DEBUG_SERIAL.print(slVal);
+  DEBUG_SERIAL.print(F(" FL="));
+  DEBUG_SERIAL.print(flVal);
+  DEBUG_SERIAL.print(F(" FR="));
+  DEBUG_SERIAL.print(frVal);
+  DEBUG_SERIAL.print(F(" FRlead="));
+  DEBUG_SERIAL.println(frLeadSeen ? F("yes") : F("no"));
+  interruptibleDelay(CFG.wait.driveSettleMs);
+  return frLeadSeen;
+}
+
+bool commandMissionStorageSideAlignToTarget(const __FlashStringHelper *title,
+                                            int16_t targetSl,
+                                            int16_t tolerance,
+                                            uint16_t settleMs) {
+  if (!ensureMobileReady()) return false;
+
+  DEBUG_SERIAL.println(title);
+  DEBUG_SERIAL.print(F("  target SL/tol="));
+  DEBUG_SERIAL.print(targetSl);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.println(tolerance);
+  DEBUG_SERIAL.print(F("  psd speed="));
+  DEBUG_SERIAL.println(missionMotion.psdCorrectionSpeed);
+  ChangeMobilebaseMode2VelocityControlMode(dxl);
+
+  int16_t slVal = 0;
+  unsigned long startedAt = millis();
+  while (true) {
+    if (checkEmergencyStopInput()) {
+      stopAll(F("[긴급정지] ! 입력"));
+      return false;
+    }
+    readSideLeftPSDSensor(&slVal);
+    if (!DriveWithOneSensor(dxl, slVal - targetSl, tolerance,
+                            DRIVE_DIRECTION_LEFT,
+                            missionMotion.psdCorrectionSpeed)) {
+      break;
+    }
+    if (millis() - startedAt > CFG.timeout.psdLoopMs) {
+      DEBUG_SERIAL.println(F("  SL 정렬 타임아웃"));
+      break;
+    }
+    delay(10);
+  }
+
+  stopMobilebase();
+  DEBUG_SERIAL.print(F("  SL 정렬 종료 SL="));
+  DEBUG_SERIAL.print(slVal);
+  DEBUG_SERIAL.print(F(" err="));
+  DEBUG_SERIAL.println(slVal - targetSl);
+  clearMissionUndoCandidate();
+  return interruptibleDelay(settleMs);
 }
 
 bool commandMissionStorageAlignToTarget(const __FlashStringHelper *title,
@@ -5105,10 +5424,35 @@ bool commandMissionStorageFrontDepthAlignToTarget(const __FlashStringHelper *tit
 }
 
 bool commandMissionStorageAlign() {
-  return commandMissionStorageAlignToTarget(
-    F("[mission move] 적재함 접근 4/4: 스캔 기준 SL+FL/FR PSD 정렬"),
-    missionAlignSl, missionAlignFl, missionAlignFr, missionAlignTolerance,
-    true, true, CFG.wait.cameraLampMs);
+  DEBUG_SERIAL.println(F("[mission move] 적재함 접근 4/4: 최종 스캔 기준 정렬"));
+  bool ok = commandMissionStorageSideAlignToTarget(
+    F("  [scan align A] SL 단독 정렬"),
+    missionAlignSl, missionAlignTolerance, CFG.wait.driveSettleMs);
+  if (ok) {
+    ok = commandMissionStorageFrontDepthAlignToTarget(
+      F("  [scan align B] FL/FR 전방 깊이 정렬"),
+      missionAlignFl, missionAlignFr, missionAlignTolerance,
+      CFG.wait.cameraLampMs);
+  }
+  if (ok) {
+    missionStorageColumn = 1;
+    pixy.setLamp(1, 1);
+    clearMissionUndoCandidate();
+  }
+  return ok;
+}
+
+bool commandMissionStorageDynamicApproach() {
+  bool ok = commandMissionStorageOpenSideGate();
+  if (!ok) {
+    DEBUG_SERIAL.println(F("[mission move] SL 게이트 확보가 완전하지 않습니다. 대각선 접근을 계속 시도합니다."));
+  }
+  ok = commandMissionStorageDiagonalApproach();
+  if (!ok) {
+    DEBUG_SERIAL.println(F("[mission move] FR>FL 감지가 완전하지 않습니다. 현재 위치에서 최종 정렬을 시도합니다."));
+  }
+  ok = commandMissionStorageAlign();
+  return ok;
 }
 
 bool commandMissionStorageGripAlignForLayer(bool lower) {
@@ -6689,10 +7033,7 @@ bool commandMissionNext() {
     }
   } else if (missionStage == MISSION_GO_TO_STORAGE) {
     ok = commandMissionStoragePose();
-    if (ok) ok = commandMissionStorageForward1();
-    if (ok) ok = commandMissionStorageForward2();
-    if (ok) ok = commandMissionStorageRight();
-    if (ok) ok = commandMissionStorageAlign();
+    if (ok) ok = commandMissionStorageDynamicApproach();
     if (ok) missionStage = MISSION_COLUMN_MOVE_OR_SCAN;
   } else if (missionStage == MISSION_COLUMN_MOVE_OR_SCAN) {
     uint8_t sourceSlot = missionSourceSlotForCurrentBlock();
@@ -6983,6 +7324,12 @@ bool commandMission(const String &input) {
   if (sub == "storagepath" || sub == "storageway" || sub == "storageapproach" ||
       sub == "적재함경로" || sub == "적재함접근") {
     bool ok = commandMissionStoragePath(input);
+    printMissionPrompt();
+    return ok;
+  }
+  if (sub == "storagegate" || sub == "storagedetect" || sub == "storagefr" ||
+      sub == "적재함감지" || sub == "적재함게이트") {
+    bool ok = commandMissionStorageGateTuning(input);
     printMissionPrompt();
     return ok;
   }
@@ -7523,6 +7870,7 @@ void printMissionSpeedStatus() {
   DEBUG_SERIAL.println(F("       mission scanrate <scanMs> <sampleMs>"));
   DEBUG_SERIAL.println(F("       mission align <targetSl> <targetFl> <targetFr> [tolerance]"));
   DEBUG_SERIAL.println(F("       mission align current [tolerance]"));
+  DEBUG_SERIAL.println(F("       mission storagegate <frMin> <frDelta> <slTol> [right] [front]"));
   DEBUG_SERIAL.println(F("       mission gripalign upper|lower <targetFl> <targetFr> [tolerance]"));
   DEBUG_SERIAL.println(F("       mission gripalign upper|lower current|run [tolerance]"));
   DEBUG_SERIAL.println(F("       mission gripdepth <upperMm> <lowerMm> [speed]"));
@@ -7699,6 +8047,7 @@ void commandGuideMain() {
   DEBUG_SERIAL.println(F("  mission instruction <sl> <ms> <raw>: 좌측 지시존 정렬/직진 보정"));
   DEBUG_SERIAL.println(F("  mission scanrate <scanMs> <sampleMs>: 미션지시존 스캔 시간/간격"));
   DEBUG_SERIAL.println(F("  mission align <sl> <fl> <fr> [tol]: 적재함 1열 스캔 정렬 기준"));
+  DEBUG_SERIAL.println(F("  mission storagegate <frMin> <frDelta> <slTol> [right] [front]: FR>FL 대각선 접근 조건"));
   DEBUG_SERIAL.println(F("  mission gripalign upper|lower <fl> <fr> [tol]: 집기 직전 FL/FR 깊이 기준"));
   DEBUG_SERIAL.println(F("  mission gripdepth <upperMm> <lowerMm> [speed]: 그립 직전 추가 전진 깊이"));
   DEBUG_SERIAL.println(F("  mission placealign <sl> <fr> [tol]: 미션수행존 배치 SL+FR 기준"));
@@ -7847,7 +8196,7 @@ void commandGuideRace() {
   DEBUG_SERIAL.println(F("SW1              # 미션지시존 도착 후 정지"));
   DEBUG_SERIAL.println(F("SW1              # Pixy scan 후 정지, 확인 후 mission accept"));
   DEBUG_SERIAL.println(F("SW1              # 적재함 기준 위치 접근/정렬"));
-  DEBUG_SERIAL.println(F("mission storagepath 450 390 60 150  # 선을 덜 밟으면 extra를 20~50씩 증가"));
+  DEBUG_SERIAL.println(F("mission storagegate 220 20 45 120 80  # FR>FL 감지 후 대각선 접근 조건"));
   DEBUG_SERIAL.println(F("SW1              # 1/5, 2/6 순서로 열 이동 또는 columnscan"));
   DEBUG_SERIAL.println(F("mission columnstep 72 150  # 한 칸 이동량/속도 조정"));
   DEBUG_SERIAL.println(F("mission columnright       # columnstep 기준 한 칸 테스트"));
