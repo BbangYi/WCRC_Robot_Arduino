@@ -152,6 +152,10 @@ int16_t missionStorageApproachFrDetectAdc = CFG.psd.storageApproachFrDetectAdc;
 int16_t missionStorageApproachFrLeadDeltaAdc = CFG.psd.storageApproachFrLeadDeltaAdc;
 uint8_t missionStorageApproachFrLeadConfirmSamples = CFG.psd.storageApproachFrLeadConfirmSamples;
 int16_t missionStorageApproachSlGateTolerance = CFG.psd.storageApproachSlGateTolerance;
+int16_t missionStorageApproachSlLeaveAdc = CFG.psd.storageApproachSlLeaveAdc;
+int16_t missionStorageApproachSlReenterAdc = CFG.psd.storageApproachSlReenterAdc;
+uint8_t missionStorageApproachSlReenterConfirmSamples = CFG.psd.storageApproachSlReenterConfirmSamples;
+uint16_t missionStorageApproachIgnoreReentryMs = CFG.psd.storageApproachIgnoreReentryMs;
 int32_t missionStorageApproachRightSpeed = CFG.speed.storageApproachRightSpeed;
 int32_t missionStorageApproachForwardSpeed = CFG.speed.storageApproachForwardSpeed;
 int16_t missionAlignFl = CFG.psd.alignFl;
@@ -403,6 +407,10 @@ void resetTunerCalibrationToDefaults() {
   missionStorageApproachFrLeadDeltaAdc = CFG.psd.storageApproachFrLeadDeltaAdc;
   missionStorageApproachFrLeadConfirmSamples = CFG.psd.storageApproachFrLeadConfirmSamples;
   missionStorageApproachSlGateTolerance = CFG.psd.storageApproachSlGateTolerance;
+  missionStorageApproachSlLeaveAdc = CFG.psd.storageApproachSlLeaveAdc;
+  missionStorageApproachSlReenterAdc = CFG.psd.storageApproachSlReenterAdc;
+  missionStorageApproachSlReenterConfirmSamples = CFG.psd.storageApproachSlReenterConfirmSamples;
+  missionStorageApproachIgnoreReentryMs = CFG.psd.storageApproachIgnoreReentryMs;
   missionStorageApproachRightSpeed = CFG.speed.storageApproachRightSpeed;
   missionStorageApproachForwardSpeed = CFG.speed.storageApproachForwardSpeed;
   missionAlignFl = CFG.psd.alignFl;
@@ -1750,6 +1758,14 @@ void printJsonMissionMotion() {
   DEBUG_SERIAL.print(missionStorageExtraForwardMm, 2);
   DEBUG_SERIAL.print(F(",\"storageRightMm\":"));
   DEBUG_SERIAL.print(missionStorageRightMm, 2);
+  DEBUG_SERIAL.print(F(",\"storageApproachSlLeave\":"));
+  DEBUG_SERIAL.print(missionStorageApproachSlLeaveAdc);
+  DEBUG_SERIAL.print(F(",\"storageApproachSlReenter\":"));
+  DEBUG_SERIAL.print(missionStorageApproachSlReenterAdc);
+  DEBUG_SERIAL.print(F(",\"storageApproachSlReenterConfirmSamples\":"));
+  DEBUG_SERIAL.print(missionStorageApproachSlReenterConfirmSamples);
+  DEBUG_SERIAL.print(F(",\"storageApproachIgnoreReentryMs\":"));
+  DEBUG_SERIAL.print(missionStorageApproachIgnoreReentryMs);
   DEBUG_SERIAL.print(F(",\"storageApproachFrMin\":"));
   DEBUG_SERIAL.print(missionStorageApproachFrDetectAdc);
   DEBUG_SERIAL.print(F(",\"storageApproachFrLeadDelta\":"));
@@ -4942,85 +4958,77 @@ bool commandMissionStoragePath(const String &input) {
 }
 
 void printMissionStorageApproachGateStatus() {
-  DEBUG_SERIAL.print(F("[mission storagegate] frMin="));
-  DEBUG_SERIAL.print(missionStorageApproachFrDetectAdc);
-  DEBUG_SERIAL.print(F(", frLeadDelta="));
-  DEBUG_SERIAL.print(missionStorageApproachFrLeadDeltaAdc);
+  DEBUG_SERIAL.print(F("[mission storagegate] slLeave="));
+  DEBUG_SERIAL.print(missionStorageApproachSlLeaveAdc);
+  DEBUG_SERIAL.print(F(", slReenter="));
+  DEBUG_SERIAL.print(missionStorageApproachSlReenterAdc);
   DEBUG_SERIAL.print(F(", confirmSamples="));
-  DEBUG_SERIAL.print(missionStorageApproachFrLeadConfirmSamples);
-  DEBUG_SERIAL.print(F(", slGateTol="));
-  DEBUG_SERIAL.print(missionStorageApproachSlGateTolerance);
-  DEBUG_SERIAL.print(F(", rightRaw="));
-  DEBUG_SERIAL.print(missionStorageApproachRightSpeed);
+  DEBUG_SERIAL.print(missionStorageApproachSlReenterConfirmSamples);
+  DEBUG_SERIAL.print(F(", ignoreMs="));
+  DEBUG_SERIAL.print(missionStorageApproachIgnoreReentryMs);
   DEBUG_SERIAL.print(F(", forwardRaw="));
   DEBUG_SERIAL.println(missionStorageApproachForwardSpeed);
-  DEBUG_SERIAL.print(F("{\"type\":\"mission-storagegate\",\"frMin\":"));
-  DEBUG_SERIAL.print(missionStorageApproachFrDetectAdc);
-  DEBUG_SERIAL.print(F(",\"frLeadDelta\":"));
-  DEBUG_SERIAL.print(missionStorageApproachFrLeadDeltaAdc);
+  DEBUG_SERIAL.print(F("{\"type\":\"mission-storagegate\",\"slLeave\":"));
+  DEBUG_SERIAL.print(missionStorageApproachSlLeaveAdc);
+  DEBUG_SERIAL.print(F(",\"slReenter\":"));
+  DEBUG_SERIAL.print(missionStorageApproachSlReenterAdc);
   DEBUG_SERIAL.print(F(",\"confirmSamples\":"));
-  DEBUG_SERIAL.print(missionStorageApproachFrLeadConfirmSamples);
-  DEBUG_SERIAL.print(F(",\"slGateTolerance\":"));
-  DEBUG_SERIAL.print(missionStorageApproachSlGateTolerance);
-  DEBUG_SERIAL.print(F(",\"rightRaw\":"));
-  DEBUG_SERIAL.print(missionStorageApproachRightSpeed);
+  DEBUG_SERIAL.print(missionStorageApproachSlReenterConfirmSamples);
+  DEBUG_SERIAL.print(F(",\"ignoreMs\":"));
+  DEBUG_SERIAL.print(missionStorageApproachIgnoreReentryMs);
   DEBUG_SERIAL.print(F(",\"forwardRaw\":"));
   DEBUG_SERIAL.print(missionStorageApproachForwardSpeed);
   DEBUG_SERIAL.println(F("}"));
 }
 
 bool commandMissionStorageGateTuning(const String &input) {
-  if (tokenCount(input) < 5) {
+  if (tokenCount(input) < 4) {
     printMissionStorageApproachGateStatus();
-    DEBUG_SERIAL.println(F("사용법: mission storagegate <frMin> <frLeadDelta> <slGateTol> [rightRaw] [forwardRaw] [confirmSamples]"));
-    DEBUG_SERIAL.println(F("예시: mission storagegate 220 20 45 120 80 3"));
+    DEBUG_SERIAL.println(F("사용법: mission storagegate <slLeave> <slReenter> [forwardRaw] [confirmSamples] [ignoreMs]"));
+    DEBUG_SERIAL.println(F("예시: mission storagegate 500 550 80 2 2000"));
     return true;
   }
 
-  long frMin = 0;
-  long frLeadDelta = 0;
-  long slGateTol = 0;
-  long rightRaw = missionStorageApproachRightSpeed;
+  long slLeave = 0;
+  long slReenter = 0;
   long forwardRaw = missionStorageApproachForwardSpeed;
-  long confirmSamples = missionStorageApproachFrLeadConfirmSamples;
-  if (!parseLongStrict(tokenAt(input, 2), &frMin) ||
-      !parseLongStrict(tokenAt(input, 3), &frLeadDelta) ||
-      !parseLongStrict(tokenAt(input, 4), &slGateTol)) {
-    DEBUG_SERIAL.println(F("사용법: mission storagegate <frMin> <frLeadDelta> <slGateTol> [rightRaw] [forwardRaw] [confirmSamples]"));
+  long confirmSamples = missionStorageApproachSlReenterConfirmSamples;
+  long ignoreMs = missionStorageApproachIgnoreReentryMs;
+  if (!parseLongStrict(tokenAt(input, 2), &slLeave) ||
+      !parseLongStrict(tokenAt(input, 3), &slReenter)) {
+    DEBUG_SERIAL.println(F("사용법: mission storagegate <slLeave> <slReenter> [forwardRaw] [confirmSamples] [ignoreMs]"));
     return false;
   }
-  if (tokenCount(input) >= 6) {
-    if (!parseLongStrict(tokenAt(input, 5), &rightRaw)) {
-      DEBUG_SERIAL.println(F("사용법: mission storagegate <frMin> <frLeadDelta> <slGateTol> [rightRaw] [forwardRaw] [confirmSamples]"));
-      return false;
-    }
+  if (tokenCount(input) >= 5 &&
+      !parseLongStrict(tokenAt(input, 4), &forwardRaw)) {
+    DEBUG_SERIAL.println(F("사용법: mission storagegate <slLeave> <slReenter> [forwardRaw] [confirmSamples] [ignoreMs]"));
+    return false;
+  }
+  if (tokenCount(input) >= 6 &&
+      !parseLongStrict(tokenAt(input, 5), &confirmSamples)) {
+    DEBUG_SERIAL.println(F("사용법: mission storagegate <slLeave> <slReenter> [forwardRaw] [confirmSamples] [ignoreMs]"));
+    return false;
   }
   if (tokenCount(input) >= 7 &&
-      !parseLongStrict(tokenAt(input, 6), &forwardRaw)) {
-    DEBUG_SERIAL.println(F("사용법: mission storagegate <frMin> <frLeadDelta> <slGateTol> [rightRaw] [forwardRaw] [confirmSamples]"));
-    return false;
-  }
-  if (tokenCount(input) >= 8 &&
-      !parseLongStrict(tokenAt(input, 7), &confirmSamples)) {
-    DEBUG_SERIAL.println(F("사용법: mission storagegate <frMin> <frLeadDelta> <slGateTol> [rightRaw] [forwardRaw] [confirmSamples]"));
+      !parseLongStrict(tokenAt(input, 6), &ignoreMs)) {
+    DEBUG_SERIAL.println(F("사용법: mission storagegate <slLeave> <slReenter> [forwardRaw] [confirmSamples] [ignoreMs]"));
     return false;
   }
 
-  if (frMin < 1 || frMin > 1023 ||
-      frLeadDelta < 1 || frLeadDelta > 300 ||
+  if (slLeave < 1 || slLeave > 1023 ||
+      slReenter < 1 || slReenter > 1023 ||
+      slLeave >= slReenter ||
       confirmSamples < 1 || confirmSamples > 20 ||
-      slGateTol < 1 || slGateTol > 200 ||
-      !validateMissionVelocitySpeed(rightRaw) ||
+      ignoreMs < 1 || ignoreMs > 10000 ||
       !validateMissionVelocitySpeed(forwardRaw)) {
-    DEBUG_SERIAL.println(F("[제한] frMin은 1~1023, delta는 1~300, slGateTol은 1~200 범위입니다."));
+    DEBUG_SERIAL.println(F("[제한] slLeave/slReenter는 1~1023, slLeave < slReenter, samples는 1~20, ignoreMs는 1~10000 범위입니다."));
     return false;
   }
 
-  missionStorageApproachFrDetectAdc = (int16_t)frMin;
-  missionStorageApproachFrLeadDeltaAdc = (int16_t)frLeadDelta;
-  missionStorageApproachFrLeadConfirmSamples = (uint8_t)confirmSamples;
-  missionStorageApproachSlGateTolerance = (int16_t)slGateTol;
-  missionStorageApproachRightSpeed = (int32_t)rightRaw;
+  missionStorageApproachSlLeaveAdc = (int16_t)slLeave;
+  missionStorageApproachSlReenterAdc = (int16_t)slReenter;
+  missionStorageApproachSlReenterConfirmSamples = (uint8_t)confirmSamples;
+  missionStorageApproachIgnoreReentryMs = (uint16_t)ignoreMs;
   missionStorageApproachForwardSpeed = (int32_t)forwardRaw;
   printMissionStorageApproachGateStatus();
   return true;
@@ -5086,6 +5094,82 @@ int16_t storageAlignFrontError(int16_t flVal, int16_t frVal) {
   return storageAlignFrontErrorFor(flVal, frVal,
                                    missionAlignFl, missionAlignFr,
                                    missionAlignTolerance);
+}
+
+bool commandMissionStorageForwardUntilSlReentry() {
+  if (!ensureMobileReady()) return false;
+
+  DEBUG_SERIAL.println(F("[mission move] 적재함 접근 1/3: 지시존 이탈 후 다음 SL 박스 감지까지 전진"));
+  DEBUG_SERIAL.print(F("  SL leave/reenter="));
+  DEBUG_SERIAL.print(missionStorageApproachSlLeaveAdc);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.print(missionStorageApproachSlReenterAdc);
+  DEBUG_SERIAL.print(F(" samples="));
+  DEBUG_SERIAL.print(missionStorageApproachSlReenterConfirmSamples);
+  DEBUG_SERIAL.print(F(", ignoreMs="));
+  DEBUG_SERIAL.print(missionStorageApproachIgnoreReentryMs);
+  DEBUG_SERIAL.print(F(", forward raw="));
+  DEBUG_SERIAL.println(missionStorageApproachForwardSpeed);
+
+  ChangeMobilebaseMode2VelocityControlMode(dxl);
+  int16_t slVal = 0;
+  bool sawLeave = false;
+  uint8_t reenterSamples = 0;
+  unsigned long ignoreReentryUntil = 0;
+  unsigned long startedAt = millis();
+  while (true) {
+    if (checkEmergencyStopInput()) {
+      stopAll(F("[긴급정지] ! 입력"));
+      return false;
+    }
+    readSideLeftPSDSensor(&slVal);
+    if (!sawLeave) {
+      if (slVal <= missionStorageApproachSlLeaveAdc) {
+        sawLeave = true;
+        ignoreReentryUntil = millis() + missionStorageApproachIgnoreReentryMs;
+        DEBUG_SERIAL.print(F("  SL 이탈 감지 SL="));
+        DEBUG_SERIAL.println(slVal);
+        DEBUG_SERIAL.print(F("  이후 "));
+        DEBUG_SERIAL.print(missionStorageApproachIgnoreReentryMs);
+        DEBUG_SERIAL.println(F("ms 동안 재감지 무시하고 전진"));
+      }
+    } else {
+      if ((long)(millis() - ignoreReentryUntil) < 0) {
+        reenterSamples = 0;
+      } else if (slVal >= missionStorageApproachSlReenterAdc) {
+        if (reenterSamples < missionStorageApproachSlReenterConfirmSamples) {
+          reenterSamples++;
+        }
+      } else {
+        reenterSamples = 0;
+      }
+      if (reenterSamples >= missionStorageApproachSlReenterConfirmSamples) {
+        break;
+      }
+    }
+
+    SetMobileGoalVelocityForSyncWrite(dxl,
+                                      missionStorageApproachForwardSpeed,
+                                      missionStorageApproachForwardSpeed,
+                                      missionStorageApproachForwardSpeed,
+                                      missionStorageApproachForwardSpeed);
+    if (millis() - startedAt > CFG.timeout.psdLoopMs) {
+      DEBUG_SERIAL.println(F("  SL 재감지 전진 타임아웃"));
+      break;
+    }
+    delay(10);
+  }
+
+  stopMobilebase();
+  DEBUG_SERIAL.print(F("  SL 재감지 전진 종료 SL="));
+  DEBUG_SERIAL.print(slVal);
+  DEBUG_SERIAL.print(F(" sawLeave="));
+  DEBUG_SERIAL.print(sawLeave ? F("yes") : F("no"));
+  DEBUG_SERIAL.print(F(" samples="));
+  DEBUG_SERIAL.println(reenterSamples);
+  interruptibleDelay(CFG.wait.driveSettleMs);
+  return sawLeave &&
+         reenterSamples >= missionStorageApproachSlReenterConfirmSamples;
 }
 
 bool missionStorageApproachFrLeadDetected(int16_t flVal, int16_t frVal) {
@@ -5488,13 +5572,9 @@ bool commandMissionStorageAlign() {
 }
 
 bool commandMissionStorageDynamicApproach() {
-  bool ok = commandMissionStorageOpenSideGate();
+  bool ok = commandMissionStorageForwardUntilSlReentry();
   if (!ok) {
-    DEBUG_SERIAL.println(F("[mission move] SL 게이트 확보가 완전하지 않습니다. 대각선 접근을 계속 시도합니다."));
-  }
-  ok = commandMissionStorageDiagonalApproach();
-  if (!ok) {
-    DEBUG_SERIAL.println(F("[mission move] FR>FL 감지가 완전하지 않습니다. 현재 위치에서 최종 정렬을 시도합니다."));
+    DEBUG_SERIAL.println(F("[mission move] SL 이탈/재감지가 완전하지 않습니다. 현재 위치에서 최종 정렬을 시도합니다."));
   }
   ok = commandMissionStorageAlign();
   return ok;
@@ -7524,7 +7604,7 @@ bool commandMission(const String &input) {
     printMissionPrompt();
     return ok;
   }
-  if (sub == "storagegate" || sub == "storagedetect" || sub == "storagefr" ||
+  if (sub == "storagegate" || sub == "storagedetect" || sub == "storagesl" ||
       sub == "적재함감지" || sub == "적재함게이트") {
     bool ok = commandMissionStorageGateTuning(input);
     printMissionPrompt();
@@ -8067,7 +8147,7 @@ void printMissionSpeedStatus() {
   DEBUG_SERIAL.println(F("       mission scanrate <scanMs> <sampleMs>"));
   DEBUG_SERIAL.println(F("       mission align <targetSl> <targetFl> <targetFr> [tolerance]"));
   DEBUG_SERIAL.println(F("       mission align current [tolerance]"));
-  DEBUG_SERIAL.println(F("       mission storagegate <frMin> <frDelta> <slTol> [right] [front] [samples]"));
+  DEBUG_SERIAL.println(F("       mission storagegate <slLeave> <slReenter> [forwardRaw] [samples] [ignoreMs]"));
   DEBUG_SERIAL.println(F("       mission gripalign upper|lower <targetFl> <targetFr> [tolerance]"));
   DEBUG_SERIAL.println(F("       mission gripalign upper|lower current|run [tolerance]"));
   DEBUG_SERIAL.println(F("       mission gripdepth <upperMm> <lowerMm> [speed]"));
@@ -8244,7 +8324,7 @@ void commandGuideMain() {
   DEBUG_SERIAL.println(F("  mission instruction <sl> <ms> <raw>: 좌측 지시존 정렬/직진 보정"));
   DEBUG_SERIAL.println(F("  mission scanrate <scanMs> <sampleMs>: 미션지시존 스캔 시간/간격"));
   DEBUG_SERIAL.println(F("  mission align <sl> <fl> <fr> [tol]: 적재함 1열 스캔 정렬 기준"));
-  DEBUG_SERIAL.println(F("  mission storagegate <frMin> <frDelta> <slTol> [right] [front] [samples]: FR>FL 대각선 접근 조건"));
+  DEBUG_SERIAL.println(F("  mission storagegate <slLeave> <slReenter> [forwardRaw] [samples] [ignoreMs]: SL 재감지 전진 조건"));
   DEBUG_SERIAL.println(F("  mission gripalign upper|lower <fl> <fr> [tol]: 집기 직전 FL/FR 깊이 기준"));
   DEBUG_SERIAL.println(F("  mission gripdepth <upperMm> <lowerMm> [speed]: 그립 직전 추가 전진 깊이"));
   DEBUG_SERIAL.println(F("  mission placealign <sl> <fr> [tol]: 미션수행존 배치 SL+FR 기준"));
@@ -8394,7 +8474,7 @@ void commandGuideRace() {
   DEBUG_SERIAL.println(F("SW1              # 미션지시존 도착 후 정지"));
   DEBUG_SERIAL.println(F("SW1              # Pixy scan 후 정지, 확인 후 mission accept"));
   DEBUG_SERIAL.println(F("SW1              # 적재함 기준 위치 접근/정렬"));
-  DEBUG_SERIAL.println(F("mission storagegate 220 20 45 120 80 3  # FR>FL 3회 연속 감지 후 대각선 접근"));
+  DEBUG_SERIAL.println(F("mission storagegate 500 550 80 2 2000  # SL 이탈 후 2초 전진, 550 재감지 시 정렬"));
   DEBUG_SERIAL.println(F("SW1              # 1/5, 2/6 순서로 열 이동 또는 columnscan"));
   DEBUG_SERIAL.println(F("mission columnstep 72 150  # 한 칸 이동량/속도 조정"));
   DEBUG_SERIAL.println(F("mission columnright       # columnstep 기준 한 칸 테스트"));

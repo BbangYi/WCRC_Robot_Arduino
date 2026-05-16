@@ -926,6 +926,11 @@ void validateMissionConfig()
       CFG.psd.storageApproachFrLeadDeltaAdc <= 0 ||
       CFG.psd.storageApproachFrLeadConfirmSamples == 0 ||
       CFG.psd.storageApproachSlGateTolerance <= 0 ||
+      CFG.psd.storageApproachSlLeaveAdc <= 0 ||
+      CFG.psd.storageApproachSlReenterAdc <= 0 ||
+      CFG.psd.storageApproachSlLeaveAdc >= CFG.psd.storageApproachSlReenterAdc ||
+      CFG.psd.storageApproachSlReenterConfirmSamples == 0 ||
+      CFG.psd.storageApproachIgnoreReentryMs == 0 ||
       CFG.speed.storageApproachRightSpeed <= 0 ||
       CFG.speed.storageApproachForwardSpeed <= 0 ||
       CFG.cameraScan.storageXTolerance <= 0 ||
@@ -1528,6 +1533,86 @@ bool storageApproachFrontNearScanDepth(int16_t flVal, int16_t frVal)
                                                  CFG.psd.alignFr,
                                                  CFG.psd.alignTolerance);
   return frontError >= -(CFG.psd.alignTolerance * 3);
+}
+
+bool driveForwardUntilStorageSlReentry()
+{
+  DEBUG_SERIAL.println(F("  [4-1] 지시존 이탈 후 다음 SL 박스 감지까지 전진"));
+  DEBUG_SERIAL.print(F("    SL leave<="));
+  DEBUG_SERIAL.print(CFG.psd.storageApproachSlLeaveAdc);
+  DEBUG_SERIAL.print(F(", reenter>="));
+  DEBUG_SERIAL.print(CFG.psd.storageApproachSlReenterAdc);
+  DEBUG_SERIAL.print(F(", confirm samples="));
+  DEBUG_SERIAL.print(CFG.psd.storageApproachSlReenterConfirmSamples);
+  DEBUG_SERIAL.print(F(", ignore reentry ms="));
+  DEBUG_SERIAL.print(CFG.psd.storageApproachIgnoreReentryMs);
+  DEBUG_SERIAL.print(F(", forward raw="));
+  DEBUG_SERIAL.println(CFG.speed.storageApproachForwardSpeed);
+
+  ChangeMobilebaseMode2VelocityControlMode(dxl);
+  int16_t slVal = 0;
+  bool sawLeave = false;
+  uint8_t reenterSamples = 0;
+  unsigned long ignoreReentryUntil = 0;
+  unsigned long t0 = millis();
+  while (1)
+  {
+    GetValueFromSideLeftPSDSensor(&slVal);
+    if (!sawLeave)
+    {
+      if (slVal <= CFG.psd.storageApproachSlLeaveAdc)
+      {
+        sawLeave = true;
+        ignoreReentryUntil = millis() + CFG.psd.storageApproachIgnoreReentryMs;
+        DEBUG_SERIAL.print(F("    SL 이탈 감지 SL="));
+        DEBUG_SERIAL.println(slVal);
+        DEBUG_SERIAL.print(F("    이후 "));
+        DEBUG_SERIAL.print(CFG.psd.storageApproachIgnoreReentryMs);
+        DEBUG_SERIAL.println(F("ms 동안 재감지 무시하고 전진"));
+      }
+    }
+    else
+    {
+      if ((long)(millis() - ignoreReentryUntil) < 0)
+      {
+        reenterSamples = 0;
+      }
+      else if (slVal >= CFG.psd.storageApproachSlReenterAdc)
+      {
+        if (reenterSamples < CFG.psd.storageApproachSlReenterConfirmSamples)
+          reenterSamples++;
+      }
+      else
+      {
+        reenterSamples = 0;
+      }
+      if (reenterSamples >= CFG.psd.storageApproachSlReenterConfirmSamples)
+        break;
+    }
+
+    SetMobileGoalVelocityForSyncWrite(dxl,
+                                      CFG.speed.storageApproachForwardSpeed,
+                                      CFG.speed.storageApproachForwardSpeed,
+                                      CFG.speed.storageApproachForwardSpeed,
+                                      CFG.speed.storageApproachForwardSpeed);
+    if (millis() - t0 > CFG.timeout.psdLoopMs)
+    {
+      DEBUG_SERIAL.println(F("    SL 재감지 전진 타임아웃"));
+      break;
+    }
+    delay(10);
+  }
+
+  SetMobileGoalVelocityForSyncWrite(dxl, 0, 0, 0, 0);
+  DEBUG_SERIAL.print(F("    SL 재감지 전진 종료 SL="));
+  DEBUG_SERIAL.print(slVal);
+  DEBUG_SERIAL.print(F(" sawLeave="));
+  DEBUG_SERIAL.print(sawLeave ? F("yes") : F("no"));
+  DEBUG_SERIAL.print(F(" samples="));
+  DEBUG_SERIAL.println(reenterSamples);
+  delay(CFG.wait.driveSettleMs);
+  return sawLeave &&
+         reenterSamples >= CFG.psd.storageApproachSlReenterConfirmSamples;
 }
 
 void setStorageApproachVelocity(int32_t rightSpeed, int32_t forwardSpeed)
@@ -2185,15 +2270,10 @@ uint8_t buildMissionPickTasks(StorageDetection detections[],
 
 bool approachStorageScanPositionDynamically()
 {
-  bool ok = openStorageSideGateBeforeApproach();
+  bool ok = driveForwardUntilStorageSlReentry();
   if (!ok)
   {
-    DEBUG_SERIAL.println(F("  [주의] SL 게이트 확보 실패. 현재 위치 기준으로 대각선 접근/최종 정렬을 시도합니다."));
-  }
-  ok = runStorageFrGatedDiagonalApproach();
-  if (!ok)
-  {
-    DEBUG_SERIAL.println(F("  [주의] FR>FL 감지 실패. 현재 위치 기준으로 최종 정렬을 시도합니다."));
+    DEBUG_SERIAL.println(F("  [주의] SL 이탈/재감지가 완전하지 않습니다. 현재 위치 기준으로 SL/FL/FR 정렬을 시도합니다."));
   }
   return alignStorageScanPosition(F("  [4-3] 최종 스캔 기준 정렬: SL 먼저, FL/FR 나중"));
 }

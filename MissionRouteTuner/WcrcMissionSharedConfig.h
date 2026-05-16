@@ -84,6 +84,14 @@ public:
     int16_t storageApproachFrLeadDeltaAdc = 20;
     uint8_t storageApproachFrLeadConfirmSamples = 3;
     int16_t storageApproachSlGateTolerance = 45;
+
+    // Mission-instruction to storage/mission-zone approach. Drive forward
+    // until the robot leaves the instruction-wall SL signal, ignore immediate
+    // re-detection for a short distance, then stop when SL sees the next box.
+    int16_t storageApproachSlLeaveAdc = 500;
+    int16_t storageApproachSlReenterAdc = 550;
+    uint8_t storageApproachSlReenterConfirmSamples = 2;
+    uint16_t storageApproachIgnoreReentryMs = 2000;
   };
 
   struct FrontApproachConfig
