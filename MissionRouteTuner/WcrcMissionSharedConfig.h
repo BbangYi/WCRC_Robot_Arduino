@@ -106,7 +106,7 @@ public:
   {
     int32_t psdCorrectionSpeed = 240;
     int32_t frontDepthCorrectionSpeed = 50;
-    int32_t missionZonePlaceCorrectionSpeed = 80;
+    int32_t missionZonePlaceCorrectionSpeed = 120;
     int32_t cameraFineTuneSpeed = 140;
     int32_t storageScanSpeed = 240;
     int32_t returnSpeed = 200;
