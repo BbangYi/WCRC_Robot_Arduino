@@ -32,6 +32,37 @@ DYNAMIXEL::InfoSyncReadInst_t sr_mobile_moving_infos; // syncread 정보 인스�
 // syncRead할 모터들 정보 인스턴스를 모터 개수만큼 생성
 DYNAMIXEL::XELInfoSyncRead_t info_wheel_moving_xels_sr[MOBILE_DXL_ID_CNT];
 
+float mobile_wheel_velocity_trim_fl = 1.0;
+float mobile_wheel_velocity_trim_fr = 1.0;
+float mobile_wheel_velocity_trim_bl = 1.0;
+float mobile_wheel_velocity_trim_br = 1.0;
+
+float sanitizeMobileWheelVelocityTrim(float scale) {
+  if (scale < 0.50) return 0.50;
+  if (scale > 1.50) return 1.50;
+  return scale;
+}
+
+int32_t applyMobileWheelVelocityTrim(int32_t velocity, float scale) {
+  return (int32_t)round((float)velocity * scale);
+}
+
+void SetMobileWheelVelocityTrim(float fl_scale, float fr_scale,
+                                float bl_scale, float br_scale) {
+  mobile_wheel_velocity_trim_fl = sanitizeMobileWheelVelocityTrim(fl_scale);
+  mobile_wheel_velocity_trim_fr = sanitizeMobileWheelVelocityTrim(fr_scale);
+  mobile_wheel_velocity_trim_bl = sanitizeMobileWheelVelocityTrim(bl_scale);
+  mobile_wheel_velocity_trim_br = sanitizeMobileWheelVelocityTrim(br_scale);
+}
+
+void GetMobileWheelVelocityTrim(float *fl_scale, float *fr_scale,
+                                float *bl_scale, float *br_scale) {
+  *fl_scale = mobile_wheel_velocity_trim_fl;
+  *fr_scale = mobile_wheel_velocity_trim_fr;
+  *bl_scale = mobile_wheel_velocity_trim_bl;
+  *br_scale = mobile_wheel_velocity_trim_br;
+}
+
 
 //////////////  모바일베이스 함수 정의
 bool InitMobilebase(Dynamixel2Arduino dxl) {
@@ -536,11 +567,11 @@ void SetMobileGoalVelocityForSyncWrite(Dynamixel2Arduino dxl,
                                        int32_t fr_goal_velocity,
                                        int32_t bl_goal_velocity,
                                        int32_t br_goal_velocity) {
-  sw_wheel_velocity_data[0].goal_velocity = fl_goal_velocity;
-  sw_wheel_velocity_data[1].goal_velocity = fr_goal_velocity;
-  sw_wheel_velocity_data[2].goal_velocity = bl_goal_velocity;
-  sw_wheel_velocity_data[3].goal_velocity = br_goal_velocity;
-  
+  sw_wheel_velocity_data[0].goal_velocity = applyMobileWheelVelocityTrim(fl_goal_velocity, mobile_wheel_velocity_trim_fl);
+  sw_wheel_velocity_data[1].goal_velocity = applyMobileWheelVelocityTrim(fr_goal_velocity, mobile_wheel_velocity_trim_fr);
+  sw_wheel_velocity_data[2].goal_velocity = applyMobileWheelVelocityTrim(bl_goal_velocity, mobile_wheel_velocity_trim_bl);
+  sw_wheel_velocity_data[3].goal_velocity = applyMobileWheelVelocityTrim(br_goal_velocity, mobile_wheel_velocity_trim_br);
+
   sw_mobile_velocity_infos.is_info_changed = true;
   
   while(!dxl.syncWrite(&sw_mobile_velocity_infos)) {}

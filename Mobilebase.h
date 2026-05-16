@@ -226,4 +226,13 @@ void SetMobileGoalVelocityForSyncWrite(Dynamixel2Arduino dxl,
                                        int32_t fl_goal_velocity, int32_t fr_goal_velocity,
                                        int32_t bl_goal_velocity, int32_t br_goal_velocity);
 
+/*
+ * Velocity-mode wheel trim. Defaults are all 1.0, so existing mission behavior
+ * is unchanged unless a tuner sketch explicitly sets trim values.
+ */
+void SetMobileWheelVelocityTrim(float fl_scale, float fr_scale,
+                                float bl_scale, float br_scale);
+void GetMobileWheelVelocityTrim(float *fl_scale, float *fr_scale,
+                                float *bl_scale, float *br_scale);
+
 #endif

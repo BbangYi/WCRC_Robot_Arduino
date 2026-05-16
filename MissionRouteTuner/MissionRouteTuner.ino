@@ -158,6 +158,10 @@ uint8_t missionStorageApproachSlReenterConfirmSamples = CFG.psd.storageApproachS
 uint16_t missionStorageApproachIgnoreReentryMs = CFG.psd.storageApproachIgnoreReentryMs;
 int32_t missionStorageApproachRightSpeed = CFG.speed.storageApproachRightSpeed;
 int32_t missionStorageApproachForwardSpeed = CFG.speed.storageApproachForwardSpeed;
+float missionWheelVelocityTrimFl = 1.0;
+float missionWheelVelocityTrimFr = 1.0;
+float missionWheelVelocityTrimBl = 1.0;
+float missionWheelVelocityTrimBr = 1.0;
 int16_t missionAlignFl = CFG.psd.alignFl;
 int16_t missionAlignFr = CFG.psd.alignFr;
 int16_t missionAlignSl = CFG.psd.alignSl;
@@ -1740,6 +1744,15 @@ void printJsonMissionMotion() {
   DEBUG_SERIAL.print(missionMotion.missionZonePlaceCorrectionSpeed);
   DEBUG_SERIAL.print(F(",\"positionMoveMmPerSec\":"));
   DEBUG_SERIAL.print(missionMotion.positionMoveMmPerSec);
+  DEBUG_SERIAL.print(F(",\"wheelVelocityTrim\":{\"fl\":"));
+  DEBUG_SERIAL.print(missionWheelVelocityTrimFl, 3);
+  DEBUG_SERIAL.print(F(",\"fr\":"));
+  DEBUG_SERIAL.print(missionWheelVelocityTrimFr, 3);
+  DEBUG_SERIAL.print(F(",\"bl\":"));
+  DEBUG_SERIAL.print(missionWheelVelocityTrimBl, 3);
+  DEBUG_SERIAL.print(F(",\"br\":"));
+  DEBUG_SERIAL.print(missionWheelVelocityTrimBr, 3);
+  DEBUG_SERIAL.print(F("}"));
   DEBUG_SERIAL.print(F(",\"fixedActuatorMs\":"));
   DEBUG_SERIAL.print(MISSION_ACTUATOR_MS);
   DEBUG_SERIAL.print(F(",\"columnStepMm\":"));
@@ -2462,6 +2475,11 @@ bool commandDrive(const String &input) {
   if (directionText == "trim" || directionText == "보정") {
     return commandDriveTrim(input);
   }
+  if (directionText == "balance" || directionText == "wheeltrim" ||
+      directionText == "velocitytrim" || directionText == "속도보정" ||
+      directionText == "좌우보정") {
+    return commandDriveBalance(input);
+  }
 
   if (!ensureMobileReady()) return false;
 
@@ -2471,6 +2489,7 @@ bool commandDrive(const String &input) {
       !parseLongStrict(tokenAt(input, 3), &speedMmPerSec)) {
     DEBUG_SERIAL.println(F("사용법: drive forward|back|left|right <mm> <mmPerSec>"));
     DEBUG_SERIAL.println(F("또는: drive trim <방향> <mm> <mmPerSec> <leftScale> <rightScale>"));
+    DEBUG_SERIAL.println(F("또는: drive balance set/test ..."));
     return false;
   }
 
@@ -3662,6 +3681,222 @@ void printTrimHint() {
   DEBUG_SERIAL.println(F("  1.00은 기본값, 0.95는 해당 바퀴 목표 회전량 5% 감소, 1.05는 5% 증가입니다."));
   DEBUG_SERIAL.println(F("  후진이 한쪽으로 휘면 0.03~0.05 단위로 한쪽 비율만 바꿔 짧게 확인하세요."));
   DEBUG_SERIAL.println(F("  예: drive trim 후진 200 100 1.00 0.95"));
+}
+
+void applyMissionWheelVelocityTrim() {
+  SetMobileWheelVelocityTrim(missionWheelVelocityTrimFl, missionWheelVelocityTrimFr,
+                             missionWheelVelocityTrimBl, missionWheelVelocityTrimBr);
+}
+
+void printMissionWheelVelocityTrimStatus() {
+  DEBUG_SERIAL.print(F("[drive balance] velocity trim FL/FR/BL/BR="));
+  DEBUG_SERIAL.print(missionWheelVelocityTrimFl, 3);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.print(missionWheelVelocityTrimFr, 3);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.print(missionWheelVelocityTrimBl, 3);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.println(missionWheelVelocityTrimBr, 3);
+  DEBUG_SERIAL.print(F("{\"type\":\"drive-balance\",\"fl\":"));
+  DEBUG_SERIAL.print(missionWheelVelocityTrimFl, 3);
+  DEBUG_SERIAL.print(F(",\"fr\":"));
+  DEBUG_SERIAL.print(missionWheelVelocityTrimFr, 3);
+  DEBUG_SERIAL.print(F(",\"bl\":"));
+  DEBUG_SERIAL.print(missionWheelVelocityTrimBl, 3);
+  DEBUG_SERIAL.print(F(",\"br\":"));
+  DEBUG_SERIAL.print(missionWheelVelocityTrimBr, 3);
+  DEBUG_SERIAL.println(F("}"));
+  DEBUG_SERIAL.println(F("  적용 범위: velocity-mode 주행/PSD 정렬. position-mode drive/mission columnstep은 영향 없음."));
+}
+
+bool setMissionWheelVelocityTrim(float flScale, float frScale,
+                                 float blScale, float brScale) {
+  if (!scaleWithinTrimLimit(flScale) || !scaleWithinTrimLimit(frScale) ||
+      !scaleWithinTrimLimit(blScale) || !scaleWithinTrimLimit(brScale)) {
+    DEBUG_SERIAL.println(F("[제한] velocity wheel balance 비율은 0.70~1.30 범위만 허용합니다."));
+    return false;
+  }
+  missionWheelVelocityTrimFl = flScale;
+  missionWheelVelocityTrimFr = frScale;
+  missionWheelVelocityTrimBl = blScale;
+  missionWheelVelocityTrimBr = brScale;
+  applyMissionWheelVelocityTrim();
+  printMissionWheelVelocityTrimStatus();
+  return true;
+}
+
+void buildDirectionalVelocityRaw(uint8_t direction, int32_t raw,
+                                 int32_t *flRaw, int32_t *frRaw,
+                                 int32_t *blRaw, int32_t *brRaw) {
+  *flRaw = raw;
+  *frRaw = raw;
+  *blRaw = raw;
+  *brRaw = raw;
+  switch (direction) {
+    case DRIVE_DIRECTION_BACKWARD:
+      *flRaw = -*flRaw;
+      *frRaw = -*frRaw;
+      *blRaw = -*blRaw;
+      *brRaw = -*brRaw;
+      break;
+    case DRIVE_DIRECTION_LEFT:
+      *flRaw = -raw;
+      *frRaw = raw;
+      *blRaw = raw;
+      *brRaw = -raw;
+      break;
+    case DRIVE_DIRECTION_RIGHT:
+      *flRaw = raw;
+      *frRaw = -raw;
+      *blRaw = -raw;
+      *brRaw = raw;
+      break;
+    case DRIVE_DIRECTION_FORWARD:
+    default:
+      break;
+  }
+}
+
+bool commandDriveBalance(const String &input) {
+  String sub = tokenAt(input, 2);
+  sub.toLowerCase();
+  if (sub.length() == 0 || sub == "status" || sub == "상태") {
+    printMissionWheelVelocityTrimStatus();
+    DEBUG_SERIAL.println(F("사용법: drive balance set <leftScale> <rightScale>"));
+    DEBUG_SERIAL.println(F("       drive balance test <forward|back|left|right> <raw> <ms> [leftScale rightScale]"));
+    return true;
+  }
+
+  if (sub == "reset" || sub == "초기화") {
+    return setMissionWheelVelocityTrim(1.0, 1.0, 1.0, 1.0);
+  }
+
+  if (sub == "set" || sub == "설정") {
+    float flScale = 1.0;
+    float frScale = 1.0;
+    float blScale = 1.0;
+    float brScale = 1.0;
+    if (tokenCount(input) >= 7) {
+      if (!parseFloatStrict(tokenAt(input, 3), &flScale) ||
+          !parseFloatStrict(tokenAt(input, 4), &frScale) ||
+          !parseFloatStrict(tokenAt(input, 5), &blScale) ||
+          !parseFloatStrict(tokenAt(input, 6), &brScale)) {
+        DEBUG_SERIAL.println(F("사용법: drive balance set <fl> <fr> <bl> <br>"));
+        return false;
+      }
+    } else if (tokenCount(input) >= 5) {
+      float leftScale = 1.0;
+      float rightScale = 1.0;
+      if (!parseFloatStrict(tokenAt(input, 3), &leftScale) ||
+          !parseFloatStrict(tokenAt(input, 4), &rightScale)) {
+        DEBUG_SERIAL.println(F("사용법: drive balance set <leftScale> <rightScale>"));
+        return false;
+      }
+      flScale = leftScale;
+      blScale = leftScale;
+      frScale = rightScale;
+      brScale = rightScale;
+    } else {
+      DEBUG_SERIAL.println(F("사용법: drive balance set <leftScale> <rightScale>"));
+      DEBUG_SERIAL.println(F("또는: drive balance set <fl> <fr> <bl> <br>"));
+      return false;
+    }
+    return setMissionWheelVelocityTrim(flScale, frScale, blScale, brScale);
+  }
+
+  if (sub == "test" || sub == "테스트") {
+    if (!ensureMobileReady()) return false;
+
+    uint8_t direction = DRIVE_DIRECTION_FORWARD;
+    long raw = 0;
+    long durationMs = 0;
+    if (!parseDriveDirection(tokenAt(input, 3), &direction) ||
+        !parseLongStrict(tokenAt(input, 4), &raw) ||
+        !parseLongStrict(tokenAt(input, 5), &durationMs)) {
+      DEBUG_SERIAL.println(F("사용법: drive balance test <forward|back|left|right> <raw> <ms> [leftScale rightScale]"));
+      return false;
+    }
+    if (raw <= 0 || raw > profile().maxMissionVelocityRaw) {
+      DEBUG_SERIAL.print(F("[제한] raw 속도는 1~"));
+      DEBUG_SERIAL.print(profile().maxMissionVelocityRaw);
+      DEBUG_SERIAL.println(F(" 범위에서 테스트하세요."));
+      return false;
+    }
+    if (durationMs <= 0 || durationMs > profile().maxDriveTimeMs) {
+      DEBUG_SERIAL.print(F("[제한] 테스트 시간은 1~"));
+      DEBUG_SERIAL.print(profile().maxDriveTimeMs);
+      DEBUG_SERIAL.println(F("ms 범위에서 테스트하세요."));
+      return false;
+    }
+    if (tokenCount(input) >= 10) {
+      float flScale = 1.0;
+      float frScale = 1.0;
+      float blScale = 1.0;
+      float brScale = 1.0;
+      if (!parseFloatStrict(tokenAt(input, 6), &flScale) ||
+          !parseFloatStrict(tokenAt(input, 7), &frScale) ||
+          !parseFloatStrict(tokenAt(input, 8), &blScale) ||
+          !parseFloatStrict(tokenAt(input, 9), &brScale) ||
+          !setMissionWheelVelocityTrim(flScale, frScale, blScale, brScale)) {
+        DEBUG_SERIAL.println(F("사용법: drive balance test <방향> <raw> <ms> <fl> <fr> <bl> <br>"));
+        return false;
+      }
+    } else if (tokenCount(input) >= 8) {
+      float leftScale = 1.0;
+      float rightScale = 1.0;
+      if (!parseFloatStrict(tokenAt(input, 6), &leftScale) ||
+          !parseFloatStrict(tokenAt(input, 7), &rightScale) ||
+          !setMissionWheelVelocityTrim(leftScale, rightScale, leftScale, rightScale)) {
+        DEBUG_SERIAL.println(F("사용법: drive balance test <방향> <raw> <ms> <leftScale> <rightScale>"));
+        return false;
+      }
+    }
+
+    int32_t flRaw = 0;
+    int32_t frRaw = 0;
+    int32_t blRaw = 0;
+    int32_t brRaw = 0;
+    buildDirectionalVelocityRaw(direction, (int32_t)raw, &flRaw, &frRaw, &blRaw, &brRaw);
+    DEBUG_SERIAL.print(F("[drive balance test] raw FL/FR/BL/BR="));
+    DEBUG_SERIAL.print(flRaw);
+    DEBUG_SERIAL.print(F("/"));
+    DEBUG_SERIAL.print(frRaw);
+    DEBUG_SERIAL.print(F("/"));
+    DEBUG_SERIAL.print(blRaw);
+    DEBUG_SERIAL.print(F("/"));
+    DEBUG_SERIAL.print(brRaw);
+    DEBUG_SERIAL.print(F(", ms="));
+    DEBUG_SERIAL.println(durationMs);
+    DEBUG_SERIAL.print(F("{\"type\":\"drive-balance-test\",\"raw\":"));
+    DEBUG_SERIAL.print(raw);
+    DEBUG_SERIAL.print(F(",\"durationMs\":"));
+    DEBUG_SERIAL.print(durationMs);
+    DEBUG_SERIAL.print(F(",\"trim\":{\"fl\":"));
+    DEBUG_SERIAL.print(missionWheelVelocityTrimFl, 3);
+    DEBUG_SERIAL.print(F(",\"fr\":"));
+    DEBUG_SERIAL.print(missionWheelVelocityTrimFr, 3);
+    DEBUG_SERIAL.print(F(",\"bl\":"));
+    DEBUG_SERIAL.print(missionWheelVelocityTrimBl, 3);
+    DEBUG_SERIAL.print(F(",\"br\":"));
+    DEBUG_SERIAL.print(missionWheelVelocityTrimBr, 3);
+    DEBUG_SERIAL.println(F("}}"));
+
+    ChangeMobilebaseMode2VelocityControlMode(dxl);
+    SetMobileGoalVelocityForSyncWrite(dxl, flRaw, frRaw, blRaw, brRaw);
+    unsigned long startedAt = millis();
+    while (millis() - startedAt < (unsigned long)durationMs) {
+      if (checkEmergencyStopInput()) {
+        stopAll(F("[긴급정지] ! 입력"));
+        return false;
+      }
+      delay(10);
+    }
+    stopMobilebase();
+    return true;
+  }
+
+  DEBUG_SERIAL.println(F("사용법: drive balance status|reset|set|test"));
+  return false;
 }
 
 bool commandDriveTrim(const String &input) {
@@ -7799,6 +8034,14 @@ void commandStatus() {
   DEBUG_SERIAL.print(F(" raw, position="));
   DEBUG_SERIAL.print(missionMotion.positionMoveMmPerSec);
   DEBUG_SERIAL.println(F("mm/s"));
+  DEBUG_SERIAL.print(F("  wheel velocity trim FL/FR/BL/BR: "));
+  DEBUG_SERIAL.print(missionWheelVelocityTrimFl, 3);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.print(missionWheelVelocityTrimFr, 3);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.print(missionWheelVelocityTrimBl, 3);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.println(missionWheelVelocityTrimBr, 3);
   DEBUG_SERIAL.print(F("  manipulator: ")); DEBUG_SERIAL.println(manipulatorReady ? F("OK") : F("FAIL"));
   DEBUG_SERIAL.print(F("  mobilebase: ")); DEBUG_SERIAL.println(mobileReady ? F("OK") : F("FAIL"));
   DEBUG_SERIAL.print(F("  pixy/gripper: ")); DEBUG_SERIAL.println(pixyReady ? F("INIT CALLED") : F("NOT INIT"));
@@ -8369,6 +8612,7 @@ void commandGuideMain() {
   DEBUG_SERIAL.println(F("  mission columnpsd [col] [n] [ms]: 현재 위치 PSD 평균/min/max JSON 출력"));
   DEBUG_SERIAL.println(F("  mission columnright/columnleft : columnstep 기준 한 칸 수동 이동"));
   DEBUG_SERIAL.println(F("  mission jog <dir> <mm> <mm/s>  : 정위치에서 임의 보정 이동"));
+  DEBUG_SERIAL.println(F("  drive balance set/test         : velocity-mode 좌/우 바퀴 속도 보정"));
   DEBUG_SERIAL.println(F("  mission storagepath <f> <e> <r>: 적재함 접근 고정거리 테스트"));
   DEBUG_SERIAL.println(F("  mission columnscan             : 현재 열 Pixy 스캔/판정 저장"));
   DEBUG_SERIAL.println(F("  pixy alignslow upper|lower     : 저속 micro-step 중심 정렬 테스트"));
@@ -8464,7 +8708,11 @@ void commandGuideDrive() {
   DEBUG_SERIAL.println(F("2) 좌/우 보정 비교"));
   DEBUG_SERIAL.println(F("drive trim 후진 200 100 1.00 0.95"));
   DEBUG_SERIAL.println(F("drive trim 후진 200 100 0.95 1.00"));
-  DEBUG_SERIAL.println(F("좋아지는 쪽을 기록한 뒤, 미션 코드 반영은 별도 단계에서 합니다."));
+  DEBUG_SERIAL.println(F("3) PSD 정렬/접근처럼 velocity-mode가 휘면"));
+  DEBUG_SERIAL.println(F("drive balance set 1.00 0.95"));
+  DEBUG_SERIAL.println(F("drive balance test forward 120 1000"));
+  DEBUG_SERIAL.println(F("drive balance status"));
+  DEBUG_SERIAL.println(F("좋아지는 쪽을 기록한 뒤, Motor 반영은 별도 단계에서 합니다."));
   printLine();
 }
 
@@ -8545,6 +8793,7 @@ void commandGuideLimits() {
   DEBUG_SERIAL.println();
   DEBUG_SERIAL.println(F("주행 제한:"));
   DEBUG_SERIAL.println(F("  - drive trim은 후보 테스트이며 Motor 설정에 자동 반영하지 않습니다."));
+  DEBUG_SERIAL.println(F("  - drive balance는 튜너 실행 중 velocity-mode에만 적용됩니다."));
   DEBUG_SERIAL.println(F("  - 후진 휨은 바닥/하중/바퀴 장착/배터리 영향을 받습니다."));
   DEBUG_SERIAL.println(F("  - 빠른 테스트는 빈 공간 또는 바퀴를 띄운 상태에서만 합니다."));
   DEBUG_SERIAL.println();
@@ -8615,6 +8864,7 @@ void commandHelpMain() {
   DEBUG_SERIAL.println(F("  status | stop | !"));
   DEBUG_SERIAL.println(F("  pose verify|backup|present"));
   DEBUG_SERIAL.println(F("  pixy scan all 5 | pixy storage lower 10 0"));
+  DEBUG_SERIAL.println(F("  drive balance status|set|test  : velocity-mode 바퀴 속도 보정"));
   DEBUG_SERIAL.println(F("  speed status | speed set front|slow|psd|depth|place|position <value>"));
   DEBUG_SERIAL.println();
   DEBUG_SERIAL.println(F("상세 도움말: help advanced 또는 help pose|pixy|drive|seq|speed|psd|cal"));
@@ -8766,6 +9016,11 @@ void commandHelpDrive() {
   DEBUG_SERIAL.println(F("    예: drive trim 후진 200 100 1.00 0.95"));
   DEBUG_SERIAL.println(F("  drive trim <방향> <mm> <mmPerSec> <fl> <fr> <bl> <br>"));
   DEBUG_SERIAL.println(F("    개별 바퀴 보정입니다. 꼭 필요할 때만 사용하세요."));
+  DEBUG_SERIAL.println(F("  drive balance set <leftScale> <rightScale>"));
+  DEBUG_SERIAL.println(F("    velocity-mode 주행/PSD 정렬용 좌/우 속도 보정입니다."));
+  DEBUG_SERIAL.println(F("    예: drive balance set 1.00 0.95"));
+  DEBUG_SERIAL.println(F("  drive balance test <방향> <raw> <ms> [leftScale rightScale]"));
+  DEBUG_SERIAL.println(F("    예: drive balance test forward 120 1000"));
   DEBUG_SERIAL.println();
   DEBUG_SERIAL.println(F("동작 방식:"));
   DEBUG_SERIAL.println(F("  1. 바퀴를 Extended Position Control + Time Based Profile로 전환"));
@@ -8778,8 +9033,8 @@ void commandHelpDrive() {
   DEBUG_SERIAL.println(F("  drive back 100 80"));
   DEBUG_SERIAL.println(F("  drive back 200 100"));
   DEBUG_SERIAL.println(F("  drive trim 후진 200 100 1.00 0.95"));
-  DEBUG_SERIAL.println(F("바퀴 비율 보정은 미션 코드에 적용하기 전, 이 튜너로 현상만 분리 확인합니다."));
-  DEBUG_SERIAL.println(F("drive trim 결과는 후보값이며 MissionConfig/Motor에는 자동 반영되지 않습니다."));
+  DEBUG_SERIAL.println(F("drive trim은 position-mode 후보, drive balance는 velocity-mode 튜너 보정입니다."));
+  DEBUG_SERIAL.println(F("둘 다 MissionConfig/Motor에는 자동 반영되지 않습니다."));
   DEBUG_SERIAL.println(F("미션 단계별 기본 속도는 speed status로 확인하고 speed set으로 임시 조정합니다."));
   printTrimHint();
   printLine();
