@@ -87,13 +87,14 @@ public:
     int16_t scanSlTolerance = 5;
     int16_t storageScanFrNoObstacle = 220;
 
-    // Storage approach opens SL first. Forward motion is allowed only after
-    // FR leads FL by this delta, which means the front-right sensor has seen
-    // the rack/obstacle earlier than the front-left sensor.
-    int16_t storageApproachFrDetectAdc = 220;
-    int16_t storageApproachFrLeadDeltaAdc = 20;
-    uint8_t storageApproachFrLeadConfirmSamples = 3;
-    int16_t storageApproachSlGateTolerance = 45;
+    // From mission-instruction zone to storage/mission zone approach:
+    // start by driving forward, wait until SL leaves the instruction wall,
+    // then stop as soon as SL rises again on the next box/zone. After that,
+    // align by SL first and FL/FR front depth second. No diagonal approach
+    // is used in the main mission flow.
+    int16_t storageApproachSlLeaveAdc = 500;
+    int16_t storageApproachSlReenterAdc = 550;
+    uint8_t storageApproachSlReenterConfirmSamples = 2;
   };
 
   struct FrontApproachConfig
@@ -113,7 +114,6 @@ public:
     int32_t storageScanSpeed = 200;
     int32_t returnSpeed = 200;
     int32_t positionMoveMmPerSec = 150;
-    int32_t storageApproachRightSpeed = 120;
     int32_t storageApproachForwardSpeed = 80;
   };
 
