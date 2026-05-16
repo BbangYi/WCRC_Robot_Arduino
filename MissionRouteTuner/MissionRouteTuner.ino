@@ -64,7 +64,7 @@ const uint16_t MANIPULATOR_SETTLE_MS = 50;
 const uint16_t STATUS_LED_FEEDBACK_MS = 120;
 const uint16_t DEFAULT_INSTRUCTION_SCAN_MS = 500;
 const uint16_t DEFAULT_INSTRUCTION_SCAN_SAMPLE_MS = 10;
-const uint16_t DEFAULT_INSTRUCTION_FINAL_FORWARD_MS = 0;
+const uint16_t DEFAULT_INSTRUCTION_FINAL_FORWARD_MS = 500;
 const int32_t DEFAULT_INSTRUCTION_FINAL_FORWARD_RAW = 120;
 
 #define RECEIVE_BUFFER_SIZE 120
@@ -4301,7 +4301,10 @@ void driveForwardWithInstructionSideCorrection(int16_t slVal) {
 }
 
 bool runInstructionFinalForwardCorrection() {
-  if (missionInstructionFinalForwardMs == 0) return true;
+  if (missionInstructionFinalForwardMs == 0) {
+    DEBUG_SERIAL.println(F("  [2-3] 미션지시존 최종 직진 보정 OFF - mission instruction <sl> <ms> <raw>로 켤 수 있습니다."));
+    return true;
+  }
 
   uint8_t signatureMap = missionInstructionSignatureMap();
   uint16_t minArea = CFG.cameraScan.missionInstructionMinBlockArea;
@@ -4311,7 +4314,7 @@ bool runInstructionFinalForwardCorrection() {
   uint32_t bestAreaScore = 0;
   unsigned long lastScanAt = 0;
 
-  DEBUG_SERIAL.print(F("  미션지시존 최종 직진 보정 "));
+  DEBUG_SERIAL.print(F("  [2-3] 미션지시존 최종 직진 보정/붙이기 "));
   DEBUG_SERIAL.print(missionInstructionFinalForwardMs);
   DEBUG_SERIAL.print(F("ms, target SL="));
   DEBUG_SERIAL.print(missionInstructionSl);
@@ -4794,8 +4797,8 @@ bool commandMissionInstructionPath(const String &input) {
   if (tokenCount(input) < 4) {
     printMissionInstructionPathStatus();
     DEBUG_SERIAL.println(F("사용법: mission instruction <targetSl> <finalForwardMs> <finalForwardRaw>"));
-    DEBUG_SERIAL.println(F("Motor 기준 기본값: mission instruction 640 0 120"));
-    DEBUG_SERIAL.println(F("주행 중 Pixy scan 실험 때만: mission instruction 640 500 120"));
+    DEBUG_SERIAL.println(F("Tuner 기본값: mission instruction 640 500 120"));
+    DEBUG_SERIAL.println(F("Motor처럼 SL 정렬 후 바로 멈추기: mission instruction 640 0 120"));
     DEBUG_SERIAL.println(F("SL 값이 클수록 왼쪽 장애물에 더 가깝습니다. finalForwardMs=0이면 최종 직진 보정 OFF입니다."));
     return true;
   }
@@ -9040,7 +9043,7 @@ void commandGuideRace() {
   DEBUG_SERIAL.println(F("미션 흐름을 한 단계씩 돌며 확인하려면:"));
   DEBUG_SERIAL.println(F("mission start"));
   DEBUG_SERIAL.println(F("mission approach 0 80   # Motor 기준: 첫 감지 후 추가 전진 없음"));
-  DEBUG_SERIAL.println(F("mission instruction 640 0 120  # Motor 기준: SL 정렬 후 추가 전진 없음"));
+  DEBUG_SERIAL.println(F("mission instruction 640 500 120  # SL 정렬 후 미션지시존에 붙이며 주행 중 Pixy scan"));
   DEBUG_SERIAL.println(F("mission scanrate 500 10  # 미션지시존 signature scan 빠르게"));
   DEBUG_SERIAL.println(F("mission scanrate 200 10  # 거의 멈추지 않는 빠른 후보"));
   DEBUG_SERIAL.println(F("SW1              # 미션지시존 도착 후 정지"));
