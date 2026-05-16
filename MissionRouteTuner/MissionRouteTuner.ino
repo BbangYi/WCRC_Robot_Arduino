@@ -7936,7 +7936,12 @@ bool commandMission(const String &input) {
   String sub = tokenAt(input, 1);
   sub.toLowerCase();
 
-  if (sub.length() == 0 || sub == "status" || sub == "상태") {
+  if (sub.length() == 0) {
+    DEBUG_SERIAL.println(F("[mission] 'mission'만 들어왔습니다. 시작하려면 mission start 또는 start를 입력하세요."));
+    printMissionPrompt();
+    return true;
+  }
+  if (sub == "status" || sub == "상태") {
     printMissionPrompt();
     return true;
   }
@@ -9509,6 +9514,12 @@ bool handleCommand(String input, bool remember) {
   if (first == "guide" || first == "가이드" || first == "절차") {
     commandGuide(input);
     return true;
+  } else if (first == "start" || first == "시작") {
+    return commandMissionStart(String("mission start"));
+  } else if (first == "quick" || first == "빠르게" || first == "적재함") {
+    return commandMissionStart(String("mission start quick"));
+  } else if (first == "next" || first == "다음") {
+    return commandMissionNext();
   } else if (first == "mission" || first == "미션") {
     return commandMission(input);
   } else if (first == "help" || first == "도움말") {
