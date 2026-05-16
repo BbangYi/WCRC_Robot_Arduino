@@ -64,7 +64,7 @@ const uint16_t MANIPULATOR_SETTLE_MS = 50;
 const uint16_t STATUS_LED_FEEDBACK_MS = 120;
 const uint16_t DEFAULT_INSTRUCTION_SCAN_MS = 500;
 const uint16_t DEFAULT_INSTRUCTION_SCAN_SAMPLE_MS = 10;
-const uint16_t DEFAULT_INSTRUCTION_FINAL_FORWARD_MS = 500;
+const uint16_t DEFAULT_INSTRUCTION_FINAL_FORWARD_MS = 0;
 const int32_t DEFAULT_INSTRUCTION_FINAL_FORWARD_RAW = 120;
 
 #define RECEIVE_BUFFER_SIZE 120
@@ -141,7 +141,7 @@ uint8_t missionColumnScanFrames = CFG.storageRack.scanFramesPerStop;
 uint16_t missionColumnScanSampleMs = CFG.wait.scanSampleMs;
 int16_t missionFrontFirstDetectAdc = CFG.front.firstDetectAdc;
 int16_t missionFrontDecelWindowAdc = CFG.front.decelWindowAdc;
-float missionFrontAfterDetectMm = 15.0;
+float missionFrontAfterDetectMm = 0.0;
 int32_t missionFrontAfterDetectMmPerSec = 80;
 int16_t missionInstructionSl = CFG.psd.missionSl;
 uint16_t missionInstructionFinalForwardMs = DEFAULT_INSTRUCTION_FINAL_FORWARD_MS;
@@ -414,7 +414,7 @@ void resetTunerCalibrationToDefaults() {
   missionColumnScanSampleMs = CFG.wait.scanSampleMs;
   missionFrontFirstDetectAdc = CFG.front.firstDetectAdc;
   missionFrontDecelWindowAdc = CFG.front.decelWindowAdc;
-  missionFrontAfterDetectMm = 15.0;
+  missionFrontAfterDetectMm = 0.0;
   missionFrontAfterDetectMmPerSec = 80;
   missionInstructionSl = CFG.psd.missionSl;
   missionInstructionFinalForwardMs = DEFAULT_INSTRUCTION_FINAL_FORWARD_MS;
@@ -4486,9 +4486,9 @@ bool commandMissionApproachInstructionZone() {
       break;
     }
     if (millis() - startedAt > CFG.timeout.psdLoopMs) {
-      DEBUG_SERIAL.println(F("  [2-2] 미션지시존 정렬 타임아웃"));
+      DEBUG_SERIAL.println(F("  [2-2] 미션지시존 정렬 타임아웃 - Motor 기준처럼 현재 위치에서 확인 단계로 진행합니다."));
       stopMobilebase();
-      return false;
+      break;
     }
     delay(10);
   }
@@ -4684,8 +4684,8 @@ bool commandMissionApproachTuning(const String &input) {
   if (tokenCount(input) < 4) {
     printMissionApproachStatus();
     DEBUG_SERIAL.println(F("사용법: mission approach <afterDetectMm> <continueRaw> [firstDetectAdc] [decelWindowAdc]"));
-    DEBUG_SERIAL.println(F("예시: mission approach 15 80"));
-    DEBUG_SERIAL.println(F("센서값은 맞고 선만 덜 밟으면 afterDetectMm를 5~10씩 올려 테스트하세요."));
+    DEBUG_SERIAL.println(F("Motor 기준 기본값: mission approach 0 80"));
+    DEBUG_SERIAL.println(F("센서값은 맞고 선만 덜 밟는 실험 때만 afterDetectMm를 5~10씩 올려 테스트하세요."));
     return true;
   }
 
@@ -4791,8 +4791,8 @@ bool commandMissionInstructionPath(const String &input) {
   if (tokenCount(input) < 4) {
     printMissionInstructionPathStatus();
     DEBUG_SERIAL.println(F("사용법: mission instruction <targetSl> <finalForwardMs> <finalForwardRaw>"));
-    DEBUG_SERIAL.println(F("예시: mission instruction 640 500 120"));
-    DEBUG_SERIAL.println(F("선을 더 확실히 밟기: mission instruction 640 700 120"));
+    DEBUG_SERIAL.println(F("Motor 기준 기본값: mission instruction 640 0 120"));
+    DEBUG_SERIAL.println(F("주행 중 Pixy scan 실험 때만: mission instruction 640 500 120"));
     DEBUG_SERIAL.println(F("SL 값이 클수록 왼쪽 장애물에 더 가깝습니다. finalForwardMs=0이면 최종 직진 보정 OFF입니다."));
     return true;
   }
@@ -9031,8 +9031,8 @@ void commandGuideRace() {
   DEBUG_SERIAL.println();
   DEBUG_SERIAL.println(F("미션 흐름을 한 단계씩 돌며 확인하려면:"));
   DEBUG_SERIAL.println(F("mission start"));
-  DEBUG_SERIAL.println(F("mission approach 15 80  # 최초 장애물 감지 후 짧게 이어서 전진"));
-  DEBUG_SERIAL.println(F("mission instruction 640 500 120  # SL 정렬 후 선을 밟으며 주행 중 Pixy scan"));
+  DEBUG_SERIAL.println(F("mission approach 0 80   # Motor 기준: 첫 감지 후 추가 전진 없음"));
+  DEBUG_SERIAL.println(F("mission instruction 640 0 120  # Motor 기준: SL 정렬 후 추가 전진 없음"));
   DEBUG_SERIAL.println(F("mission scanrate 500 10  # 미션지시존 signature scan 빠르게"));
   DEBUG_SERIAL.println(F("mission scanrate 200 10  # 거의 멈추지 않는 빠른 후보"));
   DEBUG_SERIAL.println(F("SW1              # 미션지시존 도착 후 정지"));
