@@ -1510,24 +1510,6 @@ bool alignStorageScanPosition(const __FlashStringHelper *title)
   return ok;
 }
 
-bool alignStorageReturnPosition(const __FlashStringHelper *title)
-{
-  DEBUG_SERIAL.println(title);
-  bool ok = alignStorageSideLeftWithPsdTarget(
-    F("  [return align A] SL 단독 정렬"),
-    CFG.psd.returnAlignSl,
-    CFG.psd.returnAlignTolerance);
-  if (ok)
-  {
-    ok = alignStorageFrontDepthWithPsdTarget(
-      F("  [return align B] FL/FR 전방 깊이 정렬"),
-      CFG.psd.returnAlignFl,
-      CFG.psd.returnAlignFr,
-      CFG.psd.returnAlignTolerance);
-  }
-  return ok;
-}
-
 bool storageApproachFrLeadDetected(int16_t flVal, int16_t frVal)
 {
   return frVal >= CFG.psd.storageApproachFrDetectAdc &&
@@ -1537,21 +1519,6 @@ bool storageApproachFrLeadDetected(int16_t flVal, int16_t frVal)
 bool storageApproachSlGateReady(int16_t slVal)
 {
   return slVal <= CFG.psd.alignSl + CFG.psd.storageApproachSlGateTolerance;
-}
-
-bool storageApproachSlForwardReady(int16_t slVal)
-{
-  return abs(slVal - CFG.psd.alignSl) <= CFG.psd.alignTolerance;
-}
-
-int32_t storageApproachSideCorrectionSpeed(int16_t slVal)
-{
-  int16_t slError = slVal - CFG.psd.alignSl;
-  if (abs(slError) <= CFG.psd.alignTolerance)
-    return 0;
-  return slError > 0
-           ? CFG.speed.storageApproachRightSpeed
-           : -CFG.speed.storageApproachRightSpeed;
 }
 
 bool storageApproachFrontNearScanDepth(int16_t flVal, int16_t frVal)
@@ -1618,8 +1585,6 @@ bool runStorageFrGatedDiagonalApproach()
   DEBUG_SERIAL.print(CFG.psd.storageApproachFrLeadDeltaAdc);
   DEBUG_SERIAL.print(F(", confirm samples="));
   DEBUG_SERIAL.print(CFG.psd.storageApproachFrLeadConfirmSamples);
-  DEBUG_SERIAL.print(F(", SL forward tol="));
-  DEBUG_SERIAL.print(CFG.psd.alignTolerance);
   DEBUG_SERIAL.print(F(", right/forward raw="));
   DEBUG_SERIAL.print(CFG.speed.storageApproachRightSpeed);
   DEBUG_SERIAL.print(F("/"));
@@ -1649,18 +1614,16 @@ bool runStorageFrGatedDiagonalApproach()
     }
     frLeadSeen = frLeadSeen ||
                  frLeadSamples >= CFG.psd.storageApproachFrLeadConfirmSamples;
-    bool slForwardReady = storageApproachSlForwardReady(slVal);
-    bool forwardAllowed = frLeadSeen && slForwardReady;
+    bool slGateReady = storageApproachSlGateReady(slVal);
+    bool forwardAllowed = frLeadSeen && slGateReady;
     bool frontNear = storageApproachFrontNearScanDepth(flVal, frVal);
 
     if (forwardAllowed && frontNear)
       break;
 
     int32_t rightSpeed = 0;
-    if (!frLeadSeen)
+    if (!frLeadSeen || !slGateReady || slVal > CFG.psd.alignSl + CFG.psd.alignTolerance)
       rightSpeed = CFG.speed.storageApproachRightSpeed;
-    else if (!slForwardReady)
-      rightSpeed = storageApproachSideCorrectionSpeed(slVal);
     int32_t forwardSpeed = forwardAllowed ? CFG.speed.storageApproachForwardSpeed : 0;
     setStorageApproachVelocity(rightSpeed, forwardSpeed);
 
@@ -1681,8 +1644,6 @@ bool runStorageFrGatedDiagonalApproach()
   DEBUG_SERIAL.print(frVal);
   DEBUG_SERIAL.print(F(" FRlead="));
   DEBUG_SERIAL.print(frLeadSeen ? F("yes") : F("no"));
-  DEBUG_SERIAL.print(F(" SLforward="));
-  DEBUG_SERIAL.print(storageApproachSlForwardReady(slVal) ? F("yes") : F("no"));
   DEBUG_SERIAL.print(F(" samples="));
   DEBUG_SERIAL.println(frLeadSamples);
   delay(CFG.wait.driveSettleMs);
@@ -2590,7 +2551,7 @@ bool placeAtZone(uint8_t goalPos)
 void realignToStorage()
 {
   DEBUG_SERIAL.println(F("    적재함 재정렬..."));
-  alignStorageReturnPosition(F("    미션수행존 -> 적재함 복귀 PSD 재정렬: SL 먼저, FL/FR 나중"));
+  alignStorageScanPosition(F("    적재함 기준 위치 PSD 재정렬: SL 먼저, FL/FR 나중"));
 }
 
 // ============================================================

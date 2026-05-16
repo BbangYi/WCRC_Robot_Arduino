@@ -158,10 +158,6 @@ int16_t missionAlignFl = CFG.psd.alignFl;
 int16_t missionAlignFr = CFG.psd.alignFr;
 int16_t missionAlignSl = CFG.psd.alignSl;
 int16_t missionAlignTolerance = CFG.psd.alignTolerance;
-int16_t missionReturnAlignFl = CFG.psd.returnAlignFl;
-int16_t missionReturnAlignFr = CFG.psd.returnAlignFr;
-int16_t missionReturnAlignSl = CFG.psd.returnAlignSl;
-int16_t missionReturnAlignTolerance = CFG.psd.returnAlignTolerance;
 int16_t missionGripAlignFl = CFG.psd.gripAlignFl;
 int16_t missionGripAlignFr = CFG.psd.gripAlignFr;
 int16_t missionGripAlignSl = CFG.psd.gripAlignSl;
@@ -413,10 +409,6 @@ void resetTunerCalibrationToDefaults() {
   missionAlignFr = CFG.psd.alignFr;
   missionAlignSl = CFG.psd.alignSl;
   missionAlignTolerance = CFG.psd.alignTolerance;
-  missionReturnAlignFl = CFG.psd.returnAlignFl;
-  missionReturnAlignFr = CFG.psd.returnAlignFr;
-  missionReturnAlignSl = CFG.psd.returnAlignSl;
-  missionReturnAlignTolerance = CFG.psd.returnAlignTolerance;
   missionGripAlignFl = CFG.psd.gripAlignFl;
   missionGripAlignFr = CFG.psd.gripAlignFr;
   missionGripAlignSl = CFG.psd.gripAlignSl;
@@ -1577,14 +1569,6 @@ void printJsonPsdSnapshot(const PsdSnapshot &snapshot) {
   DEBUG_SERIAL.print(missionAlignSl);
   DEBUG_SERIAL.print(F(",\"alignTolerance\":"));
   DEBUG_SERIAL.print(missionAlignTolerance);
-  DEBUG_SERIAL.print(F(",\"returnAlignFl\":"));
-  DEBUG_SERIAL.print(missionReturnAlignFl);
-  DEBUG_SERIAL.print(F(",\"returnAlignFr\":"));
-  DEBUG_SERIAL.print(missionReturnAlignFr);
-  DEBUG_SERIAL.print(F(",\"returnAlignSl\":"));
-  DEBUG_SERIAL.print(missionReturnAlignSl);
-  DEBUG_SERIAL.print(F(",\"returnAlignTolerance\":"));
-  DEBUG_SERIAL.print(missionReturnAlignTolerance);
   DEBUG_SERIAL.print(F(",\"gripAlignFl\":"));
   DEBUG_SERIAL.print(missionGripAlignFl);
   DEBUG_SERIAL.print(F(",\"gripAlignFr\":"));
@@ -4545,15 +4529,6 @@ void printMissionAlignStatus() {
   DEBUG_SERIAL.print(F(", tolerance="));
   DEBUG_SERIAL.print(missionAlignTolerance);
   DEBUG_SERIAL.println(F(" (SR ignored)"));
-  DEBUG_SERIAL.print(F("[mission returnalign] return SL="));
-  DEBUG_SERIAL.print(missionReturnAlignSl);
-  DEBUG_SERIAL.print(F(", FL="));
-  DEBUG_SERIAL.print(missionReturnAlignFl);
-  DEBUG_SERIAL.print(F(", FR="));
-  DEBUG_SERIAL.print(missionReturnAlignFr);
-  DEBUG_SERIAL.print(F(", tolerance="));
-  DEBUG_SERIAL.print(missionReturnAlignTolerance);
-  DEBUG_SERIAL.println(F(" (mission-zone -> storage, SR ignored)"));
   DEBUG_SERIAL.print(F("{\"type\":\"mission-align\",\"sl\":"));
   DEBUG_SERIAL.print(missionAlignSl);
   DEBUG_SERIAL.print(F(",\"fl\":"));
@@ -4562,35 +4537,6 @@ void printMissionAlignStatus() {
   DEBUG_SERIAL.print(missionAlignFr);
   DEBUG_SERIAL.print(F(",\"tolerance\":"));
   DEBUG_SERIAL.print(missionAlignTolerance);
-  DEBUG_SERIAL.print(F(",\"sideRightUsed\":false,\"return\":{\"sl\":"));
-  DEBUG_SERIAL.print(missionReturnAlignSl);
-  DEBUG_SERIAL.print(F(",\"fl\":"));
-  DEBUG_SERIAL.print(missionReturnAlignFl);
-  DEBUG_SERIAL.print(F(",\"fr\":"));
-  DEBUG_SERIAL.print(missionReturnAlignFr);
-  DEBUG_SERIAL.print(F(",\"tolerance\":"));
-  DEBUG_SERIAL.print(missionReturnAlignTolerance);
-  DEBUG_SERIAL.println(F(",\"sideRightUsed\":false}}"));
-}
-
-void printMissionReturnAlignStatus() {
-  DEBUG_SERIAL.print(F("[mission returnalign] SL="));
-  DEBUG_SERIAL.print(missionReturnAlignSl);
-  DEBUG_SERIAL.print(F(", FL="));
-  DEBUG_SERIAL.print(missionReturnAlignFl);
-  DEBUG_SERIAL.print(F(", FR="));
-  DEBUG_SERIAL.print(missionReturnAlignFr);
-  DEBUG_SERIAL.print(F(", tolerance="));
-  DEBUG_SERIAL.print(missionReturnAlignTolerance);
-  DEBUG_SERIAL.println(F(" (SL 먼저, 이후 FL/FR)"));
-  DEBUG_SERIAL.print(F("{\"type\":\"mission-returnalign\",\"sl\":"));
-  DEBUG_SERIAL.print(missionReturnAlignSl);
-  DEBUG_SERIAL.print(F(",\"fl\":"));
-  DEBUG_SERIAL.print(missionReturnAlignFl);
-  DEBUG_SERIAL.print(F(",\"fr\":"));
-  DEBUG_SERIAL.print(missionReturnAlignFr);
-  DEBUG_SERIAL.print(F(",\"tolerance\":"));
-  DEBUG_SERIAL.print(missionReturnAlignTolerance);
   DEBUG_SERIAL.println(F(",\"sideRightUsed\":false}"));
 }
 
@@ -4695,75 +4641,6 @@ bool commandMissionAlignTuning(const String &input) {
   missionAlignFr = (int16_t)targetFr;
   missionAlignTolerance = (int16_t)tolerance;
   printMissionAlignStatus();
-  return true;
-}
-
-bool commandMissionReturnAlignTuning(const String &input) {
-  String mode = tokenAt(input, 2);
-  mode.toLowerCase();
-  if (mode == "run" || mode == "go" || mode == "move" || mode == "실행" || mode == "이동") {
-    return commandMissionRealignStorage();
-  }
-  if (mode == "current" || mode == "now" || mode == "현재") {
-    long tolerance = missionReturnAlignTolerance;
-    if (tokenCount(input) >= 4 &&
-        !parseLongStrict(tokenAt(input, 3), &tolerance)) {
-      DEBUG_SERIAL.println(F("사용법: mission returnalign current [tolerance]"));
-      return false;
-    }
-    if (tolerance < 1 || tolerance > 80) {
-      DEBUG_SERIAL.println(F("[제한] tolerance는 1~80 범위입니다."));
-      return false;
-    }
-    PsdSnapshot snapshot;
-    readAllPSDSensors(&snapshot);
-    missionReturnAlignSl = snapshot.sl;
-    missionReturnAlignFl = snapshot.fl;
-    missionReturnAlignFr = snapshot.fr;
-    missionReturnAlignTolerance = (int16_t)tolerance;
-    DEBUG_SERIAL.println(F("[mission returnalign] 현재 PSD 값을 미션수행존->적재함 복귀 기준으로 적용했습니다. SR은 저장하지 않습니다."));
-    printMissionReturnAlignStatus();
-    printPsdStatus();
-    return true;
-  }
-  if (tokenCount(input) < 5) {
-    printMissionReturnAlignStatus();
-    DEBUG_SERIAL.println(F("사용법: mission returnalign <targetSl> <targetFl> <targetFr> [tolerance]"));
-    DEBUG_SERIAL.println(F("       mission returnalign current [tolerance]"));
-    DEBUG_SERIAL.println(F("       mission returnalign run"));
-    DEBUG_SERIAL.println(F("예시: mission returnalign 297 239 225 8"));
-    DEBUG_SERIAL.println(F("복귀 정렬은 SL을 먼저 범위에 넣고, 그 다음 FL/FR 전방 깊이를 맞춥니다."));
-    return true;
-  }
-
-  long targetSl = 0;
-  long targetFl = 0;
-  long targetFr = 0;
-  long tolerance = missionReturnAlignTolerance;
-  if (!parseLongStrict(tokenAt(input, 2), &targetSl) ||
-      !parseLongStrict(tokenAt(input, 3), &targetFl) ||
-      !parseLongStrict(tokenAt(input, 4), &targetFr)) {
-    DEBUG_SERIAL.println(F("사용법: mission returnalign <targetSl> <targetFl> <targetFr> [tolerance]"));
-    return false;
-  }
-  if (tokenCount(input) >= 6 &&
-      !parseLongStrict(tokenAt(input, 5), &tolerance)) {
-    DEBUG_SERIAL.println(F("사용법: mission returnalign <targetSl> <targetFl> <targetFr> [tolerance]"));
-    return false;
-  }
-  if (targetSl < 1 || targetSl > 1023 ||
-      targetFl < 1 || targetFl > 1023 ||
-      targetFr < 1 || targetFr > 1023 ||
-      tolerance < 1 || tolerance > 80) {
-    DEBUG_SERIAL.println(F("[제한] targetSl/targetFl/targetFr은 1~1023, tolerance는 1~80 범위입니다."));
-    return false;
-  }
-
-  missionReturnAlignSl = (int16_t)targetSl;
-  missionReturnAlignFl = (int16_t)targetFl;
-  missionReturnAlignFr = (int16_t)targetFr;
-  missionReturnAlignTolerance = (int16_t)tolerance;
-  printMissionReturnAlignStatus();
   return true;
 }
 
@@ -5220,20 +5097,6 @@ bool missionStorageApproachSlGateReady(int16_t slVal) {
   return slVal <= missionAlignSl + missionStorageApproachSlGateTolerance;
 }
 
-bool missionStorageApproachSlForwardReady(int16_t slVal) {
-  return abs(slVal - missionAlignSl) <= missionAlignTolerance;
-}
-
-int32_t missionStorageApproachSideCorrectionSpeed(int16_t slVal) {
-  int16_t slError = slVal - missionAlignSl;
-  if (abs(slError) <= missionAlignTolerance) {
-    return 0;
-  }
-  return slError > 0
-           ? missionStorageApproachRightSpeed
-           : -missionStorageApproachRightSpeed;
-}
-
 bool missionStorageApproachFrontNearScanDepth(int16_t flVal, int16_t frVal) {
   int16_t frontError = storageAlignFrontErrorFor(flVal, frVal,
                                                  missionAlignFl, missionAlignFr,
@@ -5367,8 +5230,6 @@ bool commandMissionStorageDiagonalApproach() {
   DEBUG_SERIAL.print(missionStorageApproachFrLeadDeltaAdc);
   DEBUG_SERIAL.print(F(" samples="));
   DEBUG_SERIAL.print(missionStorageApproachFrLeadConfirmSamples);
-  DEBUG_SERIAL.print(F(", SL forward tol="));
-  DEBUG_SERIAL.print(missionAlignTolerance);
   DEBUG_SERIAL.print(F(", right/forward raw="));
   DEBUG_SERIAL.print(missionStorageApproachRightSpeed);
   DEBUG_SERIAL.print(F("/"));
@@ -5397,18 +5258,17 @@ bool commandMissionStorageDiagonalApproach() {
     }
     frLeadSeen = frLeadSeen ||
                  frLeadSamples >= missionStorageApproachFrLeadConfirmSamples;
-    bool slForwardReady = missionStorageApproachSlForwardReady(slVal);
-    bool forwardAllowed = frLeadSeen && slForwardReady;
+    bool slGateReady = missionStorageApproachSlGateReady(slVal);
+    bool forwardAllowed = frLeadSeen && slGateReady;
     bool frontNear = missionStorageApproachFrontNearScanDepth(flVal, frVal);
     if (forwardAllowed && frontNear) {
       break;
     }
 
     int32_t rightSpeed = 0;
-    if (!frLeadSeen) {
+    if (!frLeadSeen || !slGateReady ||
+        slVal > missionAlignSl + missionAlignTolerance) {
       rightSpeed = missionStorageApproachRightSpeed;
-    } else if (!slForwardReady) {
-      rightSpeed = missionStorageApproachSideCorrectionSpeed(slVal);
     }
     int32_t forwardSpeed = forwardAllowed ? missionStorageApproachForwardSpeed : 0;
     setMissionStorageApproachVelocity(rightSpeed, forwardSpeed);
@@ -5429,8 +5289,6 @@ bool commandMissionStorageDiagonalApproach() {
   DEBUG_SERIAL.print(frVal);
   DEBUG_SERIAL.print(F(" FRlead="));
   DEBUG_SERIAL.print(frLeadSeen ? F("yes") : F("no"));
-  DEBUG_SERIAL.print(F(" SLforward="));
-  DEBUG_SERIAL.print(missionStorageApproachSlForwardReady(slVal) ? F("yes") : F("no"));
   DEBUG_SERIAL.print(F(" samples="));
   DEBUG_SERIAL.println(frLeadSamples);
   interruptibleDelay(CFG.wait.driveSettleMs);
@@ -5857,21 +5715,47 @@ bool commandMissionMoveToZoneAndPlace(uint8_t slot) {
 bool commandMissionRealignStorage() {
   if (!ensureMobileReady()) return false;
 
-  DEBUG_SERIAL.println(F("[mission move] 미션수행존 -> 적재함 복귀 정렬"));
-  bool ok = commandMissionStorageSideAlignToTarget(
-    F("  [return align A] SL 단독 정렬"),
-    missionReturnAlignSl, missionReturnAlignTolerance, CFG.wait.driveSettleMs);
-  if (ok) {
-    ok = commandMissionStorageFrontDepthAlignToTarget(
-      F("  [return align B] FL/FR 전방 깊이 정렬"),
-      missionReturnAlignFl, missionReturnAlignFr, missionReturnAlignTolerance,
-      CFG.wait.driveSettleMs);
+  DEBUG_SERIAL.println(F("[mission move] 적재함 기준 위치로 재정렬"));
+  DEBUG_SERIAL.print(F("  psd speed="));
+  DEBUG_SERIAL.println(missionMotion.psdCorrectionSpeed);
+  ChangeMobilebaseMode2VelocityControlMode(dxl);
+  int16_t slVal = 0;
+  int16_t flVal = 0;
+  int16_t frVal = 0;
+  int16_t frontError = 0;
+  unsigned long startedAt = millis();
+  while (true) {
+    if (checkEmergencyStopInput()) {
+      stopAll(F("[긴급정지] ! 입력"));
+      return false;
+    }
+    readSideLeftPSDSensor(&slVal);
+    readFrontPSDSensors(&flVal, &frVal);
+    frontError = storageAlignFrontError(flVal, frVal);
+    if (!LocatingWithTwoSensors(dxl, slVal - missionAlignSl,
+                                frontError, missionAlignTolerance,
+                                DRIVE_DIRECTION_LEFT,
+                                missionMotion.psdCorrectionSpeed)) {
+      break;
+    }
+    if (millis() - startedAt > CFG.timeout.psdLoopMs) {
+      DEBUG_SERIAL.println(F("  재정렬 타임아웃"));
+      break;
+    }
+    delay(10);
   }
-  if (ok) {
-    missionStorageColumn = 1;
-    clearMissionUndoCandidate();
-  }
-  return ok;
+  stopMobilebase();
+  DEBUG_SERIAL.print(F("  재정렬 종료 SL="));
+  DEBUG_SERIAL.print(slVal);
+  DEBUG_SERIAL.print(F(" FL="));
+  DEBUG_SERIAL.print(flVal);
+  DEBUG_SERIAL.print(F(" FR="));
+  DEBUG_SERIAL.print(frVal);
+  DEBUG_SERIAL.print(F(" frontError="));
+  DEBUG_SERIAL.println(frontError);
+  missionStorageColumn = 1;
+  clearMissionUndoCandidate();
+  return interruptibleDelay(CFG.wait.driveSettleMs);
 }
 
 void driveBackwardWithLeftBoundaryCorrection(int16_t slVal) {
@@ -7670,12 +7554,6 @@ bool commandMission(const String &input) {
     printMissionPrompt();
     return ok;
   }
-  if (sub == "returnalign" || sub == "realign" || sub == "복귀정렬" ||
-      sub == "재정렬") {
-    bool ok = commandMissionReturnAlignTuning(input);
-    printMissionPrompt();
-    return ok;
-  }
   if (sub == "gripalign" || sub == "pickalign" || sub == "집기정렬" ||
       sub == "그립정렬") {
     bool ok = commandMissionGripAlignTuning(input);
@@ -7797,7 +7675,7 @@ bool commandMission(const String &input) {
     return true;
   }
 
-  DEBUG_SERIAL.println(F("사용법: mission start [quick]|run storage|next|rescan|accept|survey|plan|column <1~4>|columnpsd|columnstep <mm> <mm/s>|columnscan|align|returnalign|gripalign|placealign|undo|finish|reset"));
+  DEBUG_SERIAL.println(F("사용법: mission start [quick]|run storage|next|rescan|accept|survey|plan|column <1~4>|columnpsd|columnstep <mm> <mm/s>|columnscan|align|gripalign|placealign|undo|finish|reset"));
   DEBUG_SERIAL.println(F("보조: mission button on/off|auto|upper|lower|slot <1~8>|block next|goto <stage>"));
   return false;
 }
@@ -7853,14 +7731,6 @@ void printPsdSnapshotLine(const PsdSnapshot &snapshot, const __FlashStringHelper
   DEBUG_SERIAL.print(missionAlignFr);
   DEBUG_SERIAL.print(F(" tol="));
   DEBUG_SERIAL.print(missionAlignTolerance);
-  DEBUG_SERIAL.print(F(" return SL/FL/FR="));
-  DEBUG_SERIAL.print(missionReturnAlignSl);
-  DEBUG_SERIAL.print(F("/"));
-  DEBUG_SERIAL.print(missionReturnAlignFl);
-  DEBUG_SERIAL.print(F("/"));
-  DEBUG_SERIAL.print(missionReturnAlignFr);
-  DEBUG_SERIAL.print(F(" tol="));
-  DEBUG_SERIAL.print(missionReturnAlignTolerance);
   DEBUG_SERIAL.print(F(" upperGrip FL/FR(SLref)="));
   DEBUG_SERIAL.print(missionGripAlignFl);
   DEBUG_SERIAL.print(F("/"));
@@ -8374,7 +8244,6 @@ void commandGuideMain() {
   DEBUG_SERIAL.println(F("  mission instruction <sl> <ms> <raw>: 좌측 지시존 정렬/직진 보정"));
   DEBUG_SERIAL.println(F("  mission scanrate <scanMs> <sampleMs>: 미션지시존 스캔 시간/간격"));
   DEBUG_SERIAL.println(F("  mission align <sl> <fl> <fr> [tol]: 적재함 1열 스캔 정렬 기준"));
-  DEBUG_SERIAL.println(F("  mission returnalign <sl> <fl> <fr> [tol]: 미션수행존->적재함 복귀 정렬 기준"));
   DEBUG_SERIAL.println(F("  mission storagegate <frMin> <frDelta> <slTol> [right] [front] [samples]: FR>FL 대각선 접근 조건"));
   DEBUG_SERIAL.println(F("  mission gripalign upper|lower <fl> <fr> [tol]: 집기 직전 FL/FR 깊이 기준"));
   DEBUG_SERIAL.println(F("  mission gripdepth <upperMm> <lowerMm> [speed]: 그립 직전 추가 전진 깊이"));
@@ -8622,7 +8491,6 @@ void commandHelpMain() {
   DEBUG_SERIAL.println(F("  mission columnstep <mm> <mm/s>: 열 이동량/속도 테스트"));
   DEBUG_SERIAL.println(F("  mission columnpsd [c] [n] [ms]: 열별 PSD 평균 JSON 출력"));
   DEBUG_SERIAL.println(F("  mission columnscan            : 현재 열 Pixy 스캔/판정 저장"));
-  DEBUG_SERIAL.println(F("  mission returnalign [run]     : 복귀 정렬 target 확인/실행"));
   DEBUG_SERIAL.println(F("  mission undo                  : 가능한 마지막 고정 거리 이동만 반대 실행"));
   DEBUG_SERIAL.println(F("  mission finish                : 현재 위치에서 후진 finish"));
   DEBUG_SERIAL.println(F("  psd status|watch [ms]|off     : PSD 네 센서값 확인/토글"));
@@ -8645,7 +8513,6 @@ void commandHelpAdvanced() {
   DEBUG_SERIAL.println(F("  mission block next            : 숨김 fallback, 보통 사용하지 않음"));
   DEBUG_SERIAL.println(F("  mission goto <stage>          : start|scan|storage|column|pick|place|realign|finish"));
   DEBUG_SERIAL.println(F("  mission align <sl> <fl> <fr> [tol]: 적재함 스캔 정렬 target 임시 변경"));
-  DEBUG_SERIAL.println(F("  mission returnalign <sl> <fl> <fr> [tol]: 미션수행존->적재함 복귀 target 변경"));
   DEBUG_SERIAL.println(F("  mission gripalign upper|lower <fl> <fr> [tol]: 집기 직전 FL/FR 깊이 target 변경"));
   DEBUG_SERIAL.println(F("  mission placealign <sl> <fr> [tol]: 미션수행존 배치 SL+FR target 임시 변경"));
   DEBUG_SERIAL.println(F("  pose run|plan|diff|tuneplan|tune|apply|save|restore|confirm|cancel"));
