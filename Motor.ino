@@ -925,6 +925,7 @@ void validateMissionConfig()
       CFG.psd.storageApproachSlLeaveAdc <= 0 ||
       CFG.psd.storageApproachSlReenterAdc <= 0 ||
       CFG.psd.storageApproachSlReenterConfirmSamples == 0 ||
+      CFG.psd.storageApproachIgnoreReentryMs == 0 ||
       CFG.speed.storageApproachForwardSpeed <= 0 ||
       CFG.cameraScan.storageXTolerance <= 0 ||
       CFG.storageRack.columnXTolerance <= 0 ||
@@ -1535,6 +1536,8 @@ bool driveForwardUntilStorageSlReentry()
   DEBUG_SERIAL.print(CFG.psd.storageApproachSlReenterAdc);
   DEBUG_SERIAL.print(F(", confirm samples="));
   DEBUG_SERIAL.print(CFG.psd.storageApproachSlReenterConfirmSamples);
+  DEBUG_SERIAL.print(F(", ignore reentry ms="));
+  DEBUG_SERIAL.print(CFG.psd.storageApproachIgnoreReentryMs);
   DEBUG_SERIAL.print(F(", forward raw="));
   DEBUG_SERIAL.println(CFG.speed.storageApproachForwardSpeed);
 
@@ -1542,6 +1545,7 @@ bool driveForwardUntilStorageSlReentry()
   int16_t slVal = 0;
   bool sawLeave = false;
   uint8_t reenterSamples = 0;
+  unsigned long ignoreReentryUntil = 0;
   unsigned long t0 = millis();
   while (1)
   {
@@ -1551,13 +1555,21 @@ bool driveForwardUntilStorageSlReentry()
       if (slVal <= CFG.psd.storageApproachSlLeaveAdc)
       {
         sawLeave = true;
+        ignoreReentryUntil = millis() + CFG.psd.storageApproachIgnoreReentryMs;
         DEBUG_SERIAL.print(F("    SL 이탈 감지 SL="));
         DEBUG_SERIAL.println(slVal);
+        DEBUG_SERIAL.print(F("    이후 "));
+        DEBUG_SERIAL.print(CFG.psd.storageApproachIgnoreReentryMs);
+        DEBUG_SERIAL.println(F("ms 동안 재감지 무시하고 전진"));
       }
     }
     else
     {
-      if (slVal >= CFG.psd.storageApproachSlReenterAdc)
+      if ((long)(millis() - ignoreReentryUntil) < 0)
+      {
+        reenterSamples = 0;
+      }
+      else if (slVal >= CFG.psd.storageApproachSlReenterAdc)
       {
         if (reenterSamples < CFG.psd.storageApproachSlReenterConfirmSamples)
           reenterSamples++;

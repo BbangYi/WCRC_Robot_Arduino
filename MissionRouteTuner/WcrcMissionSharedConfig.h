@@ -95,6 +95,7 @@ public:
     int16_t storageApproachSlLeaveAdc = 500;
     int16_t storageApproachSlReenterAdc = 550;
     uint8_t storageApproachSlReenterConfirmSamples = 2;
+    uint16_t storageApproachIgnoreReentryMs = 2000;
   };
 
   struct FrontApproachConfig
