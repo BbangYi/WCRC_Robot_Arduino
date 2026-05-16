@@ -77,9 +77,8 @@ public:
     int16_t scanSlTolerance = 5;
     int16_t storageScanFrNoObstacle = 220;
 
-    // Storage approach opens SL first. Forward motion is allowed only after
-    // FR leads FL by this delta, which means the front-right sensor has seen
-    // the rack/obstacle earlier than the front-left sensor.
+    // Legacy/manual FR gate helpers. The main mission path now uses SL
+    // re-entry below before final SL -> FL/FR alignment.
     int16_t storageApproachFrDetectAdc = 220;
     int16_t storageApproachFrLeadDeltaAdc = 20;
     uint8_t storageApproachFrLeadConfirmSamples = 3;
@@ -106,13 +105,13 @@ public:
 
   struct SpeedConfig
   {
-    int32_t psdCorrectionSpeed = 200;
+    int32_t psdCorrectionSpeed = 120;
     int32_t cameraFineTuneSpeed = 140;
     int32_t storageScanSpeed = 200;
     int32_t returnSpeed = 200;
     int32_t positionMoveMmPerSec = 150;
     int32_t storageApproachRightSpeed = 120;
-    int32_t storageApproachForwardSpeed = 80;
+    int32_t storageApproachForwardSpeed = 150;
   };
 
   struct StorageDriveConfig

@@ -1554,7 +1554,7 @@ bool driveForwardUntilStorageSlReentry()
   bool sawLeave = false;
   uint8_t reenterSamples = 0;
   unsigned long ignoreReentryUntil = 0;
-  unsigned long t0 = millis();
+  unsigned long lastProgressLogMs = millis();
   while (1)
   {
     GetValueFromSideLeftPSDSensor(&slVal);
@@ -1595,10 +1595,15 @@ bool driveForwardUntilStorageSlReentry()
                                       CFG.speed.storageApproachForwardSpeed,
                                       CFG.speed.storageApproachForwardSpeed,
                                       CFG.speed.storageApproachForwardSpeed);
-    if (millis() - t0 > CFG.timeout.psdLoopMs)
+    if (millis() - lastProgressLogMs >= 1000)
     {
-      DEBUG_SERIAL.println(F("    SL 재감지 전진 타임아웃"));
-      break;
+      DEBUG_SERIAL.print(F("    SL 재감지 대기 중 SL="));
+      DEBUG_SERIAL.print(slVal);
+      DEBUG_SERIAL.print(F(" sawLeave="));
+      DEBUG_SERIAL.print(sawLeave ? F("yes") : F("no"));
+      DEBUG_SERIAL.print(F(" samples="));
+      DEBUG_SERIAL.println(reenterSamples);
+      lastProgressLogMs = millis();
     }
     delay(10);
   }

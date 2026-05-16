@@ -4985,7 +4985,7 @@ bool commandMissionStorageGateTuning(const String &input) {
   if (tokenCount(input) < 4) {
     printMissionStorageApproachGateStatus();
     DEBUG_SERIAL.println(F("사용법: mission storagegate <slLeave> <slReenter> [forwardRaw] [confirmSamples] [ignoreMs]"));
-    DEBUG_SERIAL.println(F("예시: mission storagegate 500 550 80 2 2000"));
+    DEBUG_SERIAL.println(F("예시: mission storagegate 500 550 150 2 2000"));
     return true;
   }
 
@@ -5116,7 +5116,7 @@ bool commandMissionStorageForwardUntilSlReentry() {
   bool sawLeave = false;
   uint8_t reenterSamples = 0;
   unsigned long ignoreReentryUntil = 0;
-  unsigned long startedAt = millis();
+  unsigned long lastProgressLogMs = millis();
   while (true) {
     if (checkEmergencyStopInput()) {
       stopAll(F("[긴급정지] ! 입력"));
@@ -5153,9 +5153,14 @@ bool commandMissionStorageForwardUntilSlReentry() {
                                       missionStorageApproachForwardSpeed,
                                       missionStorageApproachForwardSpeed,
                                       missionStorageApproachForwardSpeed);
-    if (millis() - startedAt > CFG.timeout.psdLoopMs) {
-      DEBUG_SERIAL.println(F("  SL 재감지 전진 타임아웃"));
-      break;
+    if (millis() - lastProgressLogMs >= 1000) {
+      DEBUG_SERIAL.print(F("  SL 재감지 대기 중 SL="));
+      DEBUG_SERIAL.print(slVal);
+      DEBUG_SERIAL.print(F(" sawLeave="));
+      DEBUG_SERIAL.print(sawLeave ? F("yes") : F("no"));
+      DEBUG_SERIAL.print(F(" samples="));
+      DEBUG_SERIAL.println(reenterSamples);
+      lastProgressLogMs = millis();
     }
     delay(10);
   }
@@ -8474,7 +8479,7 @@ void commandGuideRace() {
   DEBUG_SERIAL.println(F("SW1              # 미션지시존 도착 후 정지"));
   DEBUG_SERIAL.println(F("SW1              # Pixy scan 후 정지, 확인 후 mission accept"));
   DEBUG_SERIAL.println(F("SW1              # 적재함 기준 위치 접근/정렬"));
-  DEBUG_SERIAL.println(F("mission storagegate 500 550 80 2 2000  # SL 이탈 후 2초 전진, 550 재감지 시 정렬"));
+  DEBUG_SERIAL.println(F("mission storagegate 500 550 150 2 2000  # SL 이탈 후 2초 전진, 550 재감지 시 정렬"));
   DEBUG_SERIAL.println(F("SW1              # 1/5, 2/6 순서로 열 이동 또는 columnscan"));
   DEBUG_SERIAL.println(F("mission columnstep 72 150  # 한 칸 이동량/속도 조정"));
   DEBUG_SERIAL.println(F("mission columnright       # columnstep 기준 한 칸 테스트"));
