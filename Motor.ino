@@ -1539,6 +1539,21 @@ bool storageApproachSlGateReady(int16_t slVal)
   return slVal <= CFG.psd.alignSl + CFG.psd.storageApproachSlGateTolerance;
 }
 
+bool storageApproachSlForwardReady(int16_t slVal)
+{
+  return abs(slVal - CFG.psd.alignSl) <= CFG.psd.alignTolerance;
+}
+
+int32_t storageApproachSideCorrectionSpeed(int16_t slVal)
+{
+  int16_t slError = slVal - CFG.psd.alignSl;
+  if (abs(slError) <= CFG.psd.alignTolerance)
+    return 0;
+  return slError > 0
+           ? CFG.speed.storageApproachRightSpeed
+           : -CFG.speed.storageApproachRightSpeed;
+}
+
 bool storageApproachFrontNearScanDepth(int16_t flVal, int16_t frVal)
 {
   int16_t frontError = storageAlignFrontErrorFor(flVal, frVal,
@@ -1603,6 +1618,8 @@ bool runStorageFrGatedDiagonalApproach()
   DEBUG_SERIAL.print(CFG.psd.storageApproachFrLeadDeltaAdc);
   DEBUG_SERIAL.print(F(", confirm samples="));
   DEBUG_SERIAL.print(CFG.psd.storageApproachFrLeadConfirmSamples);
+  DEBUG_SERIAL.print(F(", SL forward tol="));
+  DEBUG_SERIAL.print(CFG.psd.alignTolerance);
   DEBUG_SERIAL.print(F(", right/forward raw="));
   DEBUG_SERIAL.print(CFG.speed.storageApproachRightSpeed);
   DEBUG_SERIAL.print(F("/"));
@@ -1632,16 +1649,18 @@ bool runStorageFrGatedDiagonalApproach()
     }
     frLeadSeen = frLeadSeen ||
                  frLeadSamples >= CFG.psd.storageApproachFrLeadConfirmSamples;
-    bool slGateReady = storageApproachSlGateReady(slVal);
-    bool forwardAllowed = frLeadSeen && slGateReady;
+    bool slForwardReady = storageApproachSlForwardReady(slVal);
+    bool forwardAllowed = frLeadSeen && slForwardReady;
     bool frontNear = storageApproachFrontNearScanDepth(flVal, frVal);
 
     if (forwardAllowed && frontNear)
       break;
 
     int32_t rightSpeed = 0;
-    if (!frLeadSeen || !slGateReady || slVal > CFG.psd.alignSl + CFG.psd.alignTolerance)
+    if (!frLeadSeen)
       rightSpeed = CFG.speed.storageApproachRightSpeed;
+    else if (!slForwardReady)
+      rightSpeed = storageApproachSideCorrectionSpeed(slVal);
     int32_t forwardSpeed = forwardAllowed ? CFG.speed.storageApproachForwardSpeed : 0;
     setStorageApproachVelocity(rightSpeed, forwardSpeed);
 
@@ -1662,6 +1681,8 @@ bool runStorageFrGatedDiagonalApproach()
   DEBUG_SERIAL.print(frVal);
   DEBUG_SERIAL.print(F(" FRlead="));
   DEBUG_SERIAL.print(frLeadSeen ? F("yes") : F("no"));
+  DEBUG_SERIAL.print(F(" SLforward="));
+  DEBUG_SERIAL.print(storageApproachSlForwardReady(slVal) ? F("yes") : F("no"));
   DEBUG_SERIAL.print(F(" samples="));
   DEBUG_SERIAL.println(frLeadSamples);
   delay(CFG.wait.driveSettleMs);

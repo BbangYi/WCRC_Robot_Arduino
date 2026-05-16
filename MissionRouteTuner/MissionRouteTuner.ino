@@ -5220,6 +5220,20 @@ bool missionStorageApproachSlGateReady(int16_t slVal) {
   return slVal <= missionAlignSl + missionStorageApproachSlGateTolerance;
 }
 
+bool missionStorageApproachSlForwardReady(int16_t slVal) {
+  return abs(slVal - missionAlignSl) <= missionAlignTolerance;
+}
+
+int32_t missionStorageApproachSideCorrectionSpeed(int16_t slVal) {
+  int16_t slError = slVal - missionAlignSl;
+  if (abs(slError) <= missionAlignTolerance) {
+    return 0;
+  }
+  return slError > 0
+           ? missionStorageApproachRightSpeed
+           : -missionStorageApproachRightSpeed;
+}
+
 bool missionStorageApproachFrontNearScanDepth(int16_t flVal, int16_t frVal) {
   int16_t frontError = storageAlignFrontErrorFor(flVal, frVal,
                                                  missionAlignFl, missionAlignFr,
@@ -5353,6 +5367,8 @@ bool commandMissionStorageDiagonalApproach() {
   DEBUG_SERIAL.print(missionStorageApproachFrLeadDeltaAdc);
   DEBUG_SERIAL.print(F(" samples="));
   DEBUG_SERIAL.print(missionStorageApproachFrLeadConfirmSamples);
+  DEBUG_SERIAL.print(F(", SL forward tol="));
+  DEBUG_SERIAL.print(missionAlignTolerance);
   DEBUG_SERIAL.print(F(", right/forward raw="));
   DEBUG_SERIAL.print(missionStorageApproachRightSpeed);
   DEBUG_SERIAL.print(F("/"));
@@ -5381,17 +5397,18 @@ bool commandMissionStorageDiagonalApproach() {
     }
     frLeadSeen = frLeadSeen ||
                  frLeadSamples >= missionStorageApproachFrLeadConfirmSamples;
-    bool slGateReady = missionStorageApproachSlGateReady(slVal);
-    bool forwardAllowed = frLeadSeen && slGateReady;
+    bool slForwardReady = missionStorageApproachSlForwardReady(slVal);
+    bool forwardAllowed = frLeadSeen && slForwardReady;
     bool frontNear = missionStorageApproachFrontNearScanDepth(flVal, frVal);
     if (forwardAllowed && frontNear) {
       break;
     }
 
     int32_t rightSpeed = 0;
-    if (!frLeadSeen || !slGateReady ||
-        slVal > missionAlignSl + missionAlignTolerance) {
+    if (!frLeadSeen) {
       rightSpeed = missionStorageApproachRightSpeed;
+    } else if (!slForwardReady) {
+      rightSpeed = missionStorageApproachSideCorrectionSpeed(slVal);
     }
     int32_t forwardSpeed = forwardAllowed ? missionStorageApproachForwardSpeed : 0;
     setMissionStorageApproachVelocity(rightSpeed, forwardSpeed);
@@ -5412,6 +5429,8 @@ bool commandMissionStorageDiagonalApproach() {
   DEBUG_SERIAL.print(frVal);
   DEBUG_SERIAL.print(F(" FRlead="));
   DEBUG_SERIAL.print(frLeadSeen ? F("yes") : F("no"));
+  DEBUG_SERIAL.print(F(" SLforward="));
+  DEBUG_SERIAL.print(missionStorageApproachSlForwardReady(slVal) ? F("yes") : F("no"));
   DEBUG_SERIAL.print(F(" samples="));
   DEBUG_SERIAL.println(frLeadSamples);
   interruptibleDelay(CFG.wait.driveSettleMs);
