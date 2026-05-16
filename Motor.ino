@@ -933,6 +933,7 @@ void validateMissionConfig()
       CFG.psd.storageApproachIgnoreReentryMs == 0 ||
       CFG.speed.storageApproachRightSpeed <= 0 ||
       CFG.speed.storageApproachForwardSpeed <= 0 ||
+      CFG.speed.frontDepthCorrectionSpeed <= 0 ||
       CFG.cameraScan.storageXTolerance <= 0 ||
       CFG.storageRack.columnXTolerance <= 0 ||
       CFG.storageRack.scanColumnStepMm <= 0.0 ||
@@ -1435,7 +1436,7 @@ bool alignStorageFrontDepthWithPsdTarget(const __FlashStringHelper *title,
     flError = flVal - targetFl;
     frError = frVal - targetFr;
     if (!GoForwardWithTwoSensors(dxl, flError, frError, tolerance,
-                                 CFG.speed.psdCorrectionSpeed))
+                                 CFG.speed.frontDepthCorrectionSpeed))
       break;
     if (millis() - t0 > CFG.timeout.psdLoopMs)
     {

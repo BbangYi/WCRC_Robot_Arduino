@@ -106,12 +106,13 @@ public:
   struct SpeedConfig
   {
     int32_t psdCorrectionSpeed = 120;
+    int32_t frontDepthCorrectionSpeed = 80;
     int32_t cameraFineTuneSpeed = 140;
     int32_t storageScanSpeed = 200;
     int32_t returnSpeed = 200;
     int32_t positionMoveMmPerSec = 150;
     int32_t storageApproachRightSpeed = 120;
-    int32_t storageApproachForwardSpeed = 150;
+    int32_t storageApproachForwardSpeed = 200;
   };
 
   struct StorageDriveConfig
