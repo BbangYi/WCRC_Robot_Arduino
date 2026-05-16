@@ -1510,6 +1510,24 @@ bool alignStorageScanPosition(const __FlashStringHelper *title)
   return ok;
 }
 
+bool alignStorageReturnPosition(const __FlashStringHelper *title)
+{
+  DEBUG_SERIAL.println(title);
+  bool ok = alignStorageSideLeftWithPsdTarget(
+    F("  [return align A] SL 단독 정렬"),
+    CFG.psd.returnAlignSl,
+    CFG.psd.returnAlignTolerance);
+  if (ok)
+  {
+    ok = alignStorageFrontDepthWithPsdTarget(
+      F("  [return align B] FL/FR 전방 깊이 정렬"),
+      CFG.psd.returnAlignFl,
+      CFG.psd.returnAlignFr,
+      CFG.psd.returnAlignTolerance);
+  }
+  return ok;
+}
+
 bool storageApproachFrLeadDetected(int16_t flVal, int16_t frVal)
 {
   return frVal >= CFG.psd.storageApproachFrDetectAdc &&
@@ -2551,7 +2569,7 @@ bool placeAtZone(uint8_t goalPos)
 void realignToStorage()
 {
   DEBUG_SERIAL.println(F("    적재함 재정렬..."));
-  alignStorageScanPosition(F("    적재함 기준 위치 PSD 재정렬: SL 먼저, FL/FR 나중"));
+  alignStorageReturnPosition(F("    미션수행존 -> 적재함 복귀 PSD 재정렬: SL 먼저, FL/FR 나중"));
 }
 
 // ============================================================

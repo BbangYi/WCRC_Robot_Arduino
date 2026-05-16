@@ -55,6 +55,14 @@ public:
     int16_t alignFr = 221;
     int16_t alignTolerance = 8;
 
+    // Return from mission zone to storage column 1. This is intentionally
+    // separate from scan align so field tests can tune the return path without
+    // changing the initial storage approach target.
+    int16_t returnAlignFl = 239;
+    int16_t returnAlignSl = 297;
+    int16_t returnAlignFr = 225;
+    int16_t returnAlignTolerance = 8;
+
     // Upper-row grip depth position. FL/FR are used for front-depth control.
     // SL is kept only as a reference/log value so grip approach does not strafe
     // sideways after Pixy center alignment.
