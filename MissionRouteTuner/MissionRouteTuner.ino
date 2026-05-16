@@ -294,6 +294,7 @@ struct MissionRuntimeMotion {
   int32_t frontSlowSpeed;
   int32_t psdCorrectionSpeed;
   int32_t frontDepthCorrectionSpeed;
+  int32_t missionZonePlaceCorrectionSpeed;
   int32_t positionMoveMmPerSec;
   uint16_t initialPoseMs;
   uint16_t storagePoseMs;
@@ -306,7 +307,7 @@ struct MissionRuntimeMotion {
 };
 
 MissionRuntimeMotion missionMotion = {
-  250, 150, 120, 80, 150,
+  250, 150, 120, 80, 80, 150,
   MISSION_ACTUATOR_MS, MISSION_ACTUATOR_MS, MISSION_ACTUATOR_MS,
   MISSION_ACTUATOR_MS, MISSION_ACTUATOR_MS, MISSION_ACTUATOR_MS,
   MISSION_ACTUATOR_MS, MISSION_ACTUATOR_MS
@@ -351,6 +352,9 @@ void applyMissionSpeedPresetForProfile() {
   missionMotion.frontDepthCorrectionSpeed = scaledMissionSpeed(CFG.speed.frontDepthCorrectionSpeed,
                                                                 profile().missionVelocityScale,
                                                                 velocityMax);
+  missionMotion.missionZonePlaceCorrectionSpeed = scaledMissionSpeed(CFG.speed.missionZonePlaceCorrectionSpeed,
+                                                                      profile().missionVelocityScale,
+                                                                      velocityMax);
   missionMotion.positionMoveMmPerSec = scaledMissionSpeed(CFG.speed.positionMoveMmPerSec,
                                                            profile().missionVelocityScale,
                                                            profile().maxDriveMmPerSec);
@@ -1732,6 +1736,8 @@ void printJsonMissionMotion() {
   DEBUG_SERIAL.print(missionMotion.psdCorrectionSpeed);
   DEBUG_SERIAL.print(F(",\"frontDepthCorrectionSpeed\":"));
   DEBUG_SERIAL.print(missionMotion.frontDepthCorrectionSpeed);
+  DEBUG_SERIAL.print(F(",\"missionZonePlaceCorrectionSpeed\":"));
+  DEBUG_SERIAL.print(missionMotion.missionZonePlaceCorrectionSpeed);
   DEBUG_SERIAL.print(F(",\"positionMoveMmPerSec\":"));
   DEBUG_SERIAL.print(missionMotion.positionMoveMmPerSec);
   DEBUG_SERIAL.print(F(",\"fixedActuatorMs\":"));
@@ -1951,6 +1957,8 @@ void printJsonTunerConfig() {
   DEBUG_SERIAL.print(CFG.speed.psdCorrectionSpeed);
   DEBUG_SERIAL.print(F(",\"frontDepthCorrectionSpeed\":"));
   DEBUG_SERIAL.print(CFG.speed.frontDepthCorrectionSpeed);
+  DEBUG_SERIAL.print(F(",\"missionZonePlaceCorrectionSpeed\":"));
+  DEBUG_SERIAL.print(CFG.speed.missionZonePlaceCorrectionSpeed);
   DEBUG_SERIAL.print(F(",\"cameraFineTuneSpeed\":"));
   DEBUG_SERIAL.print(CFG.speed.cameraFineTuneSpeed);
   DEBUG_SERIAL.print(F(",\"storageScanSpeed\":"));
@@ -5752,8 +5760,8 @@ bool commandMissionMoveToPlaceAlign() {
   DEBUG_SERIAL.print(missionPlaceFr);
   DEBUG_SERIAL.print(F("/"));
   DEBUG_SERIAL.println(missionPlaceTolerance);
-  DEBUG_SERIAL.print(F("  psd speed="));
-  DEBUG_SERIAL.println(missionMotion.psdCorrectionSpeed);
+  DEBUG_SERIAL.print(F("  place align speed="));
+  DEBUG_SERIAL.println(missionMotion.missionZonePlaceCorrectionSpeed);
 
   ChangeMobilebaseMode2VelocityControlMode(dxl);
   int16_t slVal = 0;
@@ -5772,7 +5780,7 @@ bool commandMissionMoveToPlaceAlign() {
     if (!LocatingWithTwoSensors(dxl, slVal - missionPlaceSl,
                                 frontError, missionPlaceTolerance,
                                 DRIVE_DIRECTION_LEFT,
-                                missionMotion.psdCorrectionSpeed)) {
+                                missionMotion.missionZonePlaceCorrectionSpeed)) {
       break;
     }
     if (millis() - startedAt > CFG.timeout.psdLoopMs) {
@@ -7202,7 +7210,7 @@ void printMissionPrompt() {
     DEBUG_SERIAL.println(F("  결과가 괜찮으면: mission accept"));
   } else if (missionStage == MISSION_GO_TO_STORAGE) {
     DEBUG_SERIAL.println(F("  SW1 실행: 3번 적재함 보기/안전 자세 + 적재함 기준 위치 접근/정렬 후 정지"));
-    DEBUG_SERIAL.println(F("  조정 가능: speed set front|slow|psd|depth|position, mission columnstep <mm> <mm/s>"));
+    DEBUG_SERIAL.println(F("  조정 가능: speed set front|slow|psd|depth|place|position, mission columnstep <mm> <mm/s>"));
   } else if (missionStage == MISSION_COLUMN_MOVE_OR_SCAN) {
     if (sourceSlot == 0) {
       DEBUG_SERIAL.println(F("  SW1 실행: 현재 열에서 아직 처리 안 된 signature를 스캔합니다. 없으면 다음 SW1에서 다음 열로 이동합니다."));
@@ -7786,6 +7794,8 @@ void commandStatus() {
   DEBUG_SERIAL.print(missionMotion.psdCorrectionSpeed);
   DEBUG_SERIAL.print(F(", depth="));
   DEBUG_SERIAL.print(missionMotion.frontDepthCorrectionSpeed);
+  DEBUG_SERIAL.print(F(", place="));
+  DEBUG_SERIAL.print(missionMotion.missionZonePlaceCorrectionSpeed);
   DEBUG_SERIAL.print(F(" raw, position="));
   DEBUG_SERIAL.print(missionMotion.positionMoveMmPerSec);
   DEBUG_SERIAL.println(F("mm/s"));
@@ -8139,6 +8149,8 @@ void printMissionSpeedStatus() {
   DEBUG_SERIAL.println(missionMotion.psdCorrectionSpeed);
   DEBUG_SERIAL.print(F("  front depth raw: "));
   DEBUG_SERIAL.println(missionMotion.frontDepthCorrectionSpeed);
+  DEBUG_SERIAL.print(F("  mission-zone place align raw: "));
+  DEBUG_SERIAL.println(missionMotion.missionZonePlaceCorrectionSpeed);
   DEBUG_SERIAL.print(F("  position move: "));
   DEBUG_SERIAL.print(missionMotion.positionMoveMmPerSec);
   DEBUG_SERIAL.println(F("mm/s"));
@@ -8158,7 +8170,7 @@ void printMissionSpeedStatus() {
   DEBUG_SERIAL.println(F("mm"));
   DEBUG_SERIAL.println();
   DEBUG_SERIAL.println(F("사용법: speed status | speed reset | speed safe|normal|fast|max"));
-  DEBUG_SERIAL.println(F("       speed set front|slow|psd|depth|position <value>"));
+  DEBUG_SERIAL.println(F("       speed set front|slow|psd|depth|place|position <value>"));
   DEBUG_SERIAL.println(F("       mission approach <afterDetectMm> <raw> [firstDetectAdc]"));
   DEBUG_SERIAL.println(F("       mission instruction <targetSl> <finalForwardMs> <raw>"));
   DEBUG_SERIAL.println(F("       mission scanrate <scanMs> <sampleMs>"));
@@ -8242,7 +8254,7 @@ bool commandSpeedSet(const String &input) {
   key.toLowerCase();
   long value = 0;
   if (!parseLongStrict(tokenAt(input, 3), &value)) {
-    DEBUG_SERIAL.println(F("사용법: speed set <front|slow|psd|depth|position> <value>"));
+    DEBUG_SERIAL.println(F("사용법: speed set <front|slow|psd|depth|place|position> <value>"));
     return false;
   }
 
@@ -8263,11 +8275,15 @@ bool commandSpeedSet(const String &input) {
              key == "깊이") {
     if (!validateMissionVelocitySpeed(value)) return false;
     missionMotion.frontDepthCorrectionSpeed = value;
+  } else if (key == "place" || key == "placealign" || key == "zone" ||
+             key == "missionzone" || key == "drop" || key == "배치") {
+    if (!validateMissionVelocitySpeed(value)) return false;
+    missionMotion.missionZonePlaceCorrectionSpeed = value;
   } else if (key == "position" || key == "drive" || key == "move") {
     if (!validateMissionPositionSpeed(value)) return false;
     missionMotion.positionMoveMmPerSec = value;
   } else if (key == "initial" || key == "storage" || key == "pregrip" ||
-             key == "grip" || key == "place" || key == "return" ||
+             key == "grip" || key == "return" ||
              key == "hold" || key == "griphold" || key == "placehold") {
     DEBUG_SERIAL.print(F("[고정] mission actuator pose/hold 시간은 "));
     DEBUG_SERIAL.print(MISSION_ACTUATOR_MS);
@@ -8276,7 +8292,7 @@ bool commandSpeedSet(const String &input) {
     return false;
   } else {
     DEBUG_SERIAL.println(F("[오류] speed key를 알 수 없습니다."));
-    DEBUG_SERIAL.println(F("가능: front, slow, psd, position"));
+    DEBUG_SERIAL.println(F("가능: front, slow, psd, depth, place, position"));
     return false;
   }
 
@@ -8599,7 +8615,7 @@ void commandHelpMain() {
   DEBUG_SERIAL.println(F("  status | stop | !"));
   DEBUG_SERIAL.println(F("  pose verify|backup|present"));
   DEBUG_SERIAL.println(F("  pixy scan all 5 | pixy storage lower 10 0"));
-  DEBUG_SERIAL.println(F("  speed status | speed set front|slow|psd|depth|position <value>"));
+  DEBUG_SERIAL.println(F("  speed status | speed set front|slow|psd|depth|place|position <value>"));
   DEBUG_SERIAL.println();
   DEBUG_SERIAL.println(F("상세 도움말: help advanced 또는 help pose|pixy|drive|seq|speed|psd|cal"));
   printLine();

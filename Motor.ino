@@ -934,6 +934,7 @@ void validateMissionConfig()
       CFG.speed.storageApproachRightSpeed <= 0 ||
       CFG.speed.storageApproachForwardSpeed <= 0 ||
       CFG.speed.frontDepthCorrectionSpeed <= 0 ||
+      CFG.speed.missionZonePlaceCorrectionSpeed <= 0 ||
       CFG.cameraScan.storageXTolerance <= 0 ||
       CFG.storageRack.columnXTolerance <= 0 ||
       CFG.storageRack.scanColumnStepMm <= 0.0 ||
@@ -2597,7 +2598,7 @@ bool placeAtZone(uint8_t goalPos)
                                 frVal - CFG.psd.missionZoneFr,
                                 CFG.psd.missionZoneTolerance,
                                 DRIVE_DIRECTION_LEFT,
-                                CFG.speed.psdCorrectionSpeed))
+                                CFG.speed.missionZonePlaceCorrectionSpeed))
       break;
     if (millis() - t0 > CFG.timeout.psdLoopMs)
     {

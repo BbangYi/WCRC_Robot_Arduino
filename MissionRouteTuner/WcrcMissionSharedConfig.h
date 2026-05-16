@@ -32,8 +32,7 @@ public:
     // Legacy/manual fallback only. The autonomous mission now places to the
     // slot detected during the storage survey: goalSlot = sourceSlot.
     uint8_t goalPositions[MAX_MISSION_BLOCKS] = {
-        1, 2, 3, 4, 5, 6, 7, 8
-    };
+        1, 2, 3, 4, 5, 6, 7, 8};
   };
 
   struct PsdConfig
@@ -105,10 +104,11 @@ public:
 
   struct SpeedConfig
   {
-    int32_t psdCorrectionSpeed = 120;
-    int32_t frontDepthCorrectionSpeed = 80;
+    int32_t psdCorrectionSpeed = 240;
+    int32_t frontDepthCorrectionSpeed = 50;
+    int32_t missionZonePlaceCorrectionSpeed = 80;
     int32_t cameraFineTuneSpeed = 140;
-    int32_t storageScanSpeed = 200;
+    int32_t storageScanSpeed = 240;
     int32_t returnSpeed = 200;
     int32_t positionMoveMmPerSec = 150;
     int32_t storageApproachRightSpeed = 120;
