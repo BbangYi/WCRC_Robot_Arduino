@@ -7127,7 +7127,7 @@ bool commandMissionScanCurrentStorageColumn() {
   uint32_t bestArea = 0;
   bool sawMatchingSignature = false;
   bool sawMatchingSignatureInPickupWindow = false;
-  bool sawColumnMismatch = false;
+  bool sawPixyColumnMismatch = false;
 
   DEBUG_SERIAL.print(F("  signatureMap="));
   printSignatureMap(signatureMap);
@@ -7140,7 +7140,7 @@ bool commandMissionScanCurrentStorageColumn() {
   DEBUG_SERIAL.println(minArea);
   DEBUG_SERIAL.print(F("  requiredColumn="));
   DEBUG_SERIAL.print(requiredColumn);
-  DEBUG_SERIAL.println(F(" (Pixy x열이 2칸 이상 어긋나면 다른 열로 봅니다.)"));
+  DEBUG_SERIAL.println(F(" (현재 물리 column/sourceSlot 우선, Pixy x열은 경고/로그용)"));
 
   for (uint8_t frame = 0; frame < frames; frame++) {
     pixy.ccc.getBlocks(true, signatureMap);
@@ -7194,24 +7194,19 @@ bool commandMissionScanCurrentStorageColumn() {
       DEBUG_SERIAL.print(storagePickupRegionName(region));
       DEBUG_SERIAL.print(F(", area="));
       DEBUG_SERIAL.print(area);
-      if (requiredColumn >= 1 && requiredColumn <= 4 &&
-          detectedPixyColumn > 0 && detectedPixyColumn != requiredColumn) {
-        DEBUG_SERIAL.print(F(", columnWarn=adjacent"));
+      bool pixyColumnMismatch = requiredColumn >= 1 && requiredColumn <= 4 &&
+                                detectedPixyColumn > 0 &&
+                                detectedPixyColumn != requiredColumn;
+      if (pixyColumnMismatch) {
+        sawPixyColumnMismatch = true;
+        DEBUG_SERIAL.print(F(", columnWarn=pixy-current-mismatch"));
       }
       if (!inRackBoundary) {
         DEBUG_SERIAL.println(F(" -> reject: outside rack boundary"));
         continue;
       }
-      if (requiredColumn >= 1 && requiredColumn <= 4 &&
-          detectedPixyColumn > 0 &&
-          abs((int)detectedPixyColumn - (int)requiredColumn) > 1) {
-        sawColumnMismatch = true;
-        DEBUG_SERIAL.println(F(" -> reject: gross current column mismatch"));
-        continue;
-      }
       if (!inPickupWindow) {
         DEBUG_SERIAL.println(F(" -> reject: outside upper/lower pickup boundary"));
-        sawMatchingSignatureInPickupWindow = true;
         continue;
       }
       sawMatchingSignatureInPickupWindow = true;
@@ -7260,9 +7255,9 @@ bool commandMissionScanCurrentStorageColumn() {
   if (!found) {
     DEBUG_SERIAL.println(F("[mission scan] 현재 source slot 조건에 맞는 블록을 찾지 못했습니다."));
     missionColumnSearchMissColumn = missionStorageColumn;
-    if (sawColumnMismatch) {
-      DEBUG_SERIAL.println(F("  signature는 보였지만 현재 물리 열과 Pixy x열 판정이 달라 탈락했습니다."));
-      DEBUG_SERIAL.println(F("  mission column <1~4>, mission columnstep <mm> <mm/s>, pixy storage all 10 0으로 열 기준을 확인하세요."));
+    if (sawPixyColumnMismatch) {
+      DEBUG_SERIAL.println(F("  Pixy x열과 현재 물리 column이 달랐지만, 이제 이 조건만으로는 탈락시키지 않습니다."));
+      DEBUG_SERIAL.println(F("  그래도 실패했다면 upper/lower pickup boundary 또는 expectedLayer 조건을 확인하세요."));
     } else if (sawMatchingSignature && !sawMatchingSignatureInPickupWindow) {
       DEBUG_SERIAL.println(F("  signature는 보였지만 적재함 전체/upper/lower 집기 boundary 밖입니다."));
       DEBUG_SERIAL.println(F("  목표 블록이 다른 열에 있거나 Pixy boundary/mission column 기준이 틀린 상태입니다."));
