@@ -136,6 +136,9 @@ uint8_t missionSurveyEndColumn = 1;
 bool missionSurveyHasResults = false;
 float missionColumnStepMm = CFG.storageRack.scanColumnStepMm;
 int32_t missionColumnMoveMmPerSec = CFG.storageRack.scanColumnMoveMmPerSec;
+uint16_t missionColumnScanSettleMs = CFG.storageRack.scanSettleMs;
+uint8_t missionColumnScanFrames = CFG.storageRack.scanFramesPerStop;
+uint16_t missionColumnScanSampleMs = CFG.wait.scanSampleMs;
 int16_t missionFrontFirstDetectAdc = CFG.front.firstDetectAdc;
 int16_t missionFrontDecelWindowAdc = CFG.front.decelWindowAdc;
 float missionFrontAfterDetectMm = 15.0;
@@ -406,6 +409,9 @@ void resetTunerCalibrationToDefaults() {
   applyMissionSpeedPresetForProfile();
   missionColumnStepMm = CFG.storageRack.scanColumnStepMm;
   missionColumnMoveMmPerSec = CFG.storageRack.scanColumnMoveMmPerSec;
+  missionColumnScanSettleMs = CFG.storageRack.scanSettleMs;
+  missionColumnScanFrames = CFG.storageRack.scanFramesPerStop;
+  missionColumnScanSampleMs = CFG.wait.scanSampleMs;
   missionFrontFirstDetectAdc = CFG.front.firstDetectAdc;
   missionFrontDecelWindowAdc = CFG.front.decelWindowAdc;
   missionFrontAfterDetectMm = 15.0;
@@ -1769,6 +1775,12 @@ void printJsonMissionMotion() {
   DEBUG_SERIAL.print(missionColumnStepMm, 2);
   DEBUG_SERIAL.print(F(",\"columnMoveMmPerSec\":"));
   DEBUG_SERIAL.print(missionColumnMoveMmPerSec);
+  DEBUG_SERIAL.print(F(",\"columnScanSettleMs\":"));
+  DEBUG_SERIAL.print(missionColumnScanSettleMs);
+  DEBUG_SERIAL.print(F(",\"columnScanFrames\":"));
+  DEBUG_SERIAL.print(missionColumnScanFrames);
+  DEBUG_SERIAL.print(F(",\"columnScanSampleMs\":"));
+  DEBUG_SERIAL.print(missionColumnScanSampleMs);
   DEBUG_SERIAL.print(F(",\"frontFirstDetectAdc\":"));
   DEBUG_SERIAL.print(missionFrontFirstDetectAdc);
   DEBUG_SERIAL.print(F(",\"frontDecelWindowAdc\":"));
@@ -2016,6 +2028,8 @@ void printJsonTunerConfig() {
   DEBUG_SERIAL.print(CFG.storageRack.scanColumnStepMm, 2);
   DEBUG_SERIAL.print(F(",\"scanColumnMoveMmPerSec\":"));
   DEBUG_SERIAL.print(CFG.storageRack.scanColumnMoveMmPerSec);
+  DEBUG_SERIAL.print(F(",\"scanSettleMs\":"));
+  DEBUG_SERIAL.print(CFG.storageRack.scanSettleMs);
   DEBUG_SERIAL.print(F(",\"scanFramesPerStop\":"));
   DEBUG_SERIAL.print(CFG.storageRack.scanFramesPerStop);
   DEBUG_SERIAL.print(F(",\"scanMinBlockArea\":"));
@@ -6767,7 +6781,7 @@ bool commandMissionSurveyScanCurrentColumn(uint8_t signatureMap) {
     DEBUG_SERIAL.println(F("[주의] Pixy init이 실패했을 수 있습니다. 그래도 survey를 시도합니다."));
   }
 
-  uint8_t frames = constrain(CFG.storageRack.scanFramesPerStop, 1, 20);
+  uint8_t frames = constrain(missionColumnScanFrames, 1, 20);
   uint16_t minArea = CFG.storageRack.scanMinBlockArea;
   bool foundAny = false;
   DEBUG_SERIAL.print(F("[mission survey] column="));
@@ -6776,8 +6790,14 @@ bool commandMissionSurveyScanCurrentColumn(uint8_t signatureMap) {
   printSignatureMap(signatureMap);
   DEBUG_SERIAL.print(F(", frames="));
   DEBUG_SERIAL.print(frames);
+  DEBUG_SERIAL.print(F(", settleMs="));
+  DEBUG_SERIAL.print(missionColumnScanSettleMs);
+  DEBUG_SERIAL.print(F(", sampleMs="));
+  DEBUG_SERIAL.print(missionColumnScanSampleMs);
   DEBUG_SERIAL.print(F(", minArea="));
   DEBUG_SERIAL.println(minArea);
+  if (missionColumnScanSettleMs > 0 &&
+      !interruptibleDelay(missionColumnScanSettleMs)) return false;
 
   for (uint8_t frame = 0; frame < frames; frame++) {
     PsdSnapshot psdSnapshot;
@@ -6822,7 +6842,7 @@ bool commandMissionSurveyScanCurrentColumn(uint8_t signatureMap) {
         foundAny = true;
       }
     }
-    if (!interruptibleDelay(CFG.wait.scanSampleMs)) return false;
+    if (!interruptibleDelay(missionColumnScanSampleMs)) return false;
   }
 
   for (uint8_t i = 0; i < missionSurveyDetectionCount; i++) {
@@ -7005,6 +7025,53 @@ bool commandMissionColumnPsdAverage(const String &input) {
   DEBUG_SERIAL.print(F(",\"sr\":"));
   DEBUG_SERIAL.print(maxSr);
   DEBUG_SERIAL.println(F("}}"));
+  return true;
+}
+
+void printMissionColumnScanTimingStatus() {
+  DEBUG_SERIAL.print(F("[mission columnscanrate] settleMs="));
+  DEBUG_SERIAL.print(missionColumnScanSettleMs);
+  DEBUG_SERIAL.print(F(", frames="));
+  DEBUG_SERIAL.print(missionColumnScanFrames);
+  DEBUG_SERIAL.print(F(", sampleMs="));
+  DEBUG_SERIAL.println(missionColumnScanSampleMs);
+  DEBUG_SERIAL.print(F("{\"type\":\"mission-columnscanrate\",\"settleMs\":"));
+  DEBUG_SERIAL.print(missionColumnScanSettleMs);
+  DEBUG_SERIAL.print(F(",\"frames\":"));
+  DEBUG_SERIAL.print(missionColumnScanFrames);
+  DEBUG_SERIAL.print(F(",\"sampleMs\":"));
+  DEBUG_SERIAL.print(missionColumnScanSampleMs);
+  DEBUG_SERIAL.println(F("}"));
+}
+
+bool commandMissionColumnScanTiming(const String &input) {
+  if (tokenCount(input) < 5) {
+    printMissionColumnScanTimingStatus();
+    DEBUG_SERIAL.println(F("사용법: mission columnscanrate <settleMs> <frames> <sampleMs>"));
+    DEBUG_SERIAL.println(F("예시: mission columnscanrate 220 10 25"));
+    return true;
+  }
+
+  long settleMs = 0;
+  long frames = 0;
+  long sampleMs = 0;
+  if (!parseLongStrict(tokenAt(input, 2), &settleMs) ||
+      !parseLongStrict(tokenAt(input, 3), &frames) ||
+      !parseLongStrict(tokenAt(input, 4), &sampleMs)) {
+    DEBUG_SERIAL.println(F("사용법: mission columnscanrate <settleMs> <frames> <sampleMs>"));
+    return false;
+  }
+  if (settleMs < 0 || settleMs > 2000 ||
+      frames < 1 || frames > 20 ||
+      sampleMs < 5 || sampleMs > 200) {
+    DEBUG_SERIAL.println(F("[제한] settleMs=0~2000, frames=1~20, sampleMs=5~200 범위입니다."));
+    return false;
+  }
+
+  missionColumnScanSettleMs = (uint16_t)settleMs;
+  missionColumnScanFrames = (uint8_t)frames;
+  missionColumnScanSampleMs = (uint16_t)sampleMs;
+  printMissionColumnScanTimingStatus();
   return true;
 }
 
@@ -7275,7 +7342,7 @@ bool commandMissionScanCurrentStorageColumn() {
     return false;
   }
 
-  uint8_t frames = constrain(CFG.storageRack.scanFramesPerStop, 1, 20);
+  uint8_t frames = constrain(missionColumnScanFrames, 1, 20);
   uint16_t minArea = CFG.storageRack.scanMinBlockArea;
   bool found = false;
   uint8_t bestSig = 0;
@@ -7298,11 +7365,17 @@ bool commandMissionScanCurrentStorageColumn() {
   else DEBUG_SERIAL.print(F("(unknown)"));
   DEBUG_SERIAL.print(F(", frames="));
   DEBUG_SERIAL.print(frames);
+  DEBUG_SERIAL.print(F(", settleMs="));
+  DEBUG_SERIAL.print(missionColumnScanSettleMs);
+  DEBUG_SERIAL.print(F(", sampleMs="));
+  DEBUG_SERIAL.print(missionColumnScanSampleMs);
   DEBUG_SERIAL.print(F(", minArea="));
   DEBUG_SERIAL.println(minArea);
   DEBUG_SERIAL.print(F("  requiredColumn="));
   DEBUG_SERIAL.print(requiredColumn);
   DEBUG_SERIAL.println(F(" (현재 물리 column/sourceSlot 우선, Pixy x열은 경고/로그용)"));
+  if (missionColumnScanSettleMs > 0 &&
+      !interruptibleDelay(missionColumnScanSettleMs)) return false;
 
   for (uint8_t frame = 0; frame < frames; frame++) {
     pixy.ccc.getBlocks(true, signatureMap);
@@ -7411,7 +7484,7 @@ bool commandMissionScanCurrentStorageColumn() {
       }
     }
 
-    if (!interruptibleDelay(CFG.wait.scanSampleMs)) return false;
+    if (!interruptibleDelay(missionColumnScanSampleMs)) return false;
   }
 
   if (!found) {
@@ -7610,7 +7683,7 @@ void printMissionPrompt() {
       DEBUG_SERIAL.println(F("  SW1 실행: 목표 열까지 한 칸씩 이동합니다. 목표 열이면 현재 열 Pixy 스캔 후 멈춥니다."));
     }
     DEBUG_SERIAL.println(F("  1/5는 1열, 2/6은 2열, 3/7은 3열, 4/8은 4열입니다."));
-    DEBUG_SERIAL.println(F("  조정 가능: mission column <1~4>, mission columnstep <mm> <mm/s>, mission columnright/left, mission jog, mission columnscan, mission undo"));
+    DEBUG_SERIAL.println(F("  조정 가능: mission column <1~4>, mission columnstep <mm> <mm/s>, mission columnscanrate, mission columnright/left, mission jog, mission columnscan, mission undo"));
   } else if (missionStage == MISSION_PICK_HOLD) {
     DEBUG_SERIAL.println(F("  SW1 실행: columnscan 판정 기준으로 Pixy 저속 micro-step 정렬 + PSD 깊이 재정렬 + 추가 깊이 집기"));
     DEBUG_SERIAL.println(F("  수동 변경: mission upper|lower, mission slot <1~8>, mission columnscan, pixy alignslow, mission gripdepth"));
@@ -7977,6 +8050,12 @@ bool commandMission(const String &input) {
     printMissionPrompt();
     return ok;
   }
+  if (sub == "columnscanrate" || sub == "columnscanwait" ||
+      sub == "colscanrate" || sub == "열스캔시간" || sub == "열확인시간") {
+    bool ok = commandMissionColumnScanTiming(input);
+    printMissionPrompt();
+    return ok;
+  }
   if (sub == "columnstep" || sub == "colstep" || sub == "열이동") {
     float stepMm = 0.0;
     long speedMmPerSec = 0;
@@ -8174,7 +8253,7 @@ bool commandMission(const String &input) {
     return true;
   }
 
-  DEBUG_SERIAL.println(F("사용법: mission start [quick]|run storage|next|rescan|accept|survey|plan|column <1~4>|columnpsd|columnstep <mm> <mm/s>|columnscan|align|gripalign|placealign|finishalign|undo|finish|reset"));
+  DEBUG_SERIAL.println(F("사용법: mission start [quick]|run storage|next|rescan|accept|survey|plan|column <1~4>|columnpsd|columnscanrate|columnstep <mm> <mm/s>|columnscan|align|gripalign|placealign|finishalign|undo|finish|reset"));
   DEBUG_SERIAL.println(F("보조: mission button on/off|auto|upper|lower|slot <1~8>|block next|goto <stage>"));
   return false;
 }
@@ -8197,6 +8276,17 @@ void commandStatus() {
   DEBUG_SERIAL.print(F(" raw, position="));
   DEBUG_SERIAL.print(missionMotion.positionMoveMmPerSec);
   DEBUG_SERIAL.println(F("mm/s"));
+  DEBUG_SERIAL.print(F("  column move/scan: "));
+  DEBUG_SERIAL.print(missionColumnStepMm, 2);
+  DEBUG_SERIAL.print(F("mm @ "));
+  DEBUG_SERIAL.print(missionColumnMoveMmPerSec);
+  DEBUG_SERIAL.print(F("mm/s, settle/frames/sample="));
+  DEBUG_SERIAL.print(missionColumnScanSettleMs);
+  DEBUG_SERIAL.print(F("ms/"));
+  DEBUG_SERIAL.print(missionColumnScanFrames);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.print(missionColumnScanSampleMs);
+  DEBUG_SERIAL.println(F("ms"));
   DEBUG_SERIAL.print(F("  finish pre-align SL/tol/speed: "));
   DEBUG_SERIAL.print(missionFinishPreAlignSl);
   DEBUG_SERIAL.print(F("/"));
@@ -8401,6 +8491,13 @@ void printTunerCalibrationStatus() {
   DEBUG_SERIAL.print(F("mm @ "));
   DEBUG_SERIAL.print(missionColumnMoveMmPerSec);
   DEBUG_SERIAL.println(F("mm/s"));
+  DEBUG_SERIAL.print(F("  column scan: settle "));
+  DEBUG_SERIAL.print(missionColumnScanSettleMs);
+  DEBUG_SERIAL.print(F("ms / frames "));
+  DEBUG_SERIAL.print(missionColumnScanFrames);
+  DEBUG_SERIAL.print(F(" / sample "));
+  DEBUG_SERIAL.print(missionColumnScanSampleMs);
+  DEBUG_SERIAL.println(F("ms"));
   DEBUG_SERIAL.print(F("  scan align SL/FL/FR/tol: "));
   DEBUG_SERIAL.print(missionAlignSl);
   DEBUG_SERIAL.print(F(" / "));
@@ -8577,6 +8674,13 @@ void printMissionSpeedStatus() {
   DEBUG_SERIAL.print(F("mm @ "));
   DEBUG_SERIAL.print(missionColumnMoveMmPerSec);
   DEBUG_SERIAL.println(F("mm/s"));
+  DEBUG_SERIAL.print(F("  column scan settle/frames/sample: "));
+  DEBUG_SERIAL.print(missionColumnScanSettleMs);
+  DEBUG_SERIAL.print(F("ms / "));
+  DEBUG_SERIAL.print(missionColumnScanFrames);
+  DEBUG_SERIAL.print(F(" / "));
+  DEBUG_SERIAL.print(missionColumnScanSampleMs);
+  DEBUG_SERIAL.println(F("ms"));
   DEBUG_SERIAL.print(F("  storage path first/extra/right: "));
   DEBUG_SERIAL.print(missionStorageFirstForwardMm, 2);
   DEBUG_SERIAL.print(F(" / "));
@@ -8599,6 +8703,7 @@ void printMissionSpeedStatus() {
   DEBUG_SERIAL.println(F("       mission placealign <targetSl> <targetFr> [tolerance]"));
   DEBUG_SERIAL.println(F("       mission placealign current|run [tolerance]"));
   DEBUG_SERIAL.println(F("       mission columnstep <mm> <mm/s>"));
+  DEBUG_SERIAL.println(F("       mission columnscanrate <settleMs> <frames> <sampleMs>"));
   DEBUG_SERIAL.println(F("       mission columnright|columnleft, mission jog <dir> <mm> <mm/s>"));
   DEBUG_SERIAL.println(F("       mission storagepath <first> <extra> <right> [speed]"));
   printLine();
@@ -8782,6 +8887,7 @@ void commandGuideMain() {
   DEBUG_SERIAL.println(F("  mission gripdepth <upperMm> <lowerMm> [speed]: 그립 직전 추가 전진 깊이"));
   DEBUG_SERIAL.println(F("  mission placealign <sl> <fr> [tol]: 미션수행존 배치 SL+FR 기준"));
   DEBUG_SERIAL.println(F("  mission columnstep <mm> <mm/s> : 열 이동량/속도 테스트값"));
+  DEBUG_SERIAL.println(F("  mission columnscanrate <settle> <frames> <sample>: 열 도착 후 확인 시간"));
   DEBUG_SERIAL.println(F("  mission columnpsd [col] [n] [ms]: 현재 위치 PSD 평균/min/max JSON 출력"));
   DEBUG_SERIAL.println(F("  mission columnright/columnleft : columnstep 기준 한 칸 수동 이동"));
   DEBUG_SERIAL.println(F("  mission jog <dir> <mm> <mm/s>  : 정위치에서 임의 보정 이동"));
@@ -8935,6 +9041,7 @@ void commandGuideRace() {
   DEBUG_SERIAL.println(F("mission storagegate 500 550 150 2 2000  # SL 이탈 후 2초 전진, 550 재감지 시 정렬"));
   DEBUG_SERIAL.println(F("SW1              # 1/5, 2/6 순서로 열 이동 또는 columnscan"));
   DEBUG_SERIAL.println(F("mission columnstep 72 150  # 한 칸 이동량/속도 조정"));
+  DEBUG_SERIAL.println(F("mission columnscanrate 220 10 25  # 열 도착 후 충분히 보고 다음 열로 이동"));
   DEBUG_SERIAL.println(F("mission columnright       # columnstep 기준 한 칸 테스트"));
   DEBUG_SERIAL.println(F("mission jog right 20 80   # 정위치에서 임의 보정 이동"));
   DEBUG_SERIAL.println(F("필요할 때만 mission upper/lower, mission slot <1~8>, mission column <1~4>로 수동 변경"));
@@ -9028,6 +9135,7 @@ void commandHelpMain() {
   DEBUG_SERIAL.println(F("  mission survey | mission plan : 적재함 전체 스캔 후 sourceSlot 기반 queue 적용"));
   DEBUG_SERIAL.println(F("  mission column <1~4>          : 현재 적재함 열 기준 지정"));
   DEBUG_SERIAL.println(F("  mission columnstep <mm> <mm/s>: 열 이동량/속도 테스트"));
+  DEBUG_SERIAL.println(F("  mission columnscanrate <settle> <frames> <sample>: 열 도착 후 스캔 시간"));
   DEBUG_SERIAL.println(F("  mission columnpsd [c] [n] [ms]: 열별 PSD 평균 JSON 출력"));
   DEBUG_SERIAL.println(F("  mission columnscan            : 현재 열 Pixy 스캔/판정 저장"));
   DEBUG_SERIAL.println(F("  mission undo                  : 가능한 마지막 고정 거리 이동만 반대 실행"));

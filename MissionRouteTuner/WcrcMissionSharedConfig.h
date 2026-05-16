@@ -135,7 +135,8 @@ public:
 
     float scanColumnStepMm = 72.0;
     int32_t scanColumnMoveMmPerSec = 150;
-    uint8_t scanFramesPerStop = 5;
+    uint16_t scanSettleMs = 180;
+    uint8_t scanFramesPerStop = 8;
     uint16_t scanMinBlockArea = 0;
 
     // Pixy x-center candidates for storage columns when the robot is aligned.

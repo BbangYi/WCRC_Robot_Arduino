@@ -939,6 +939,7 @@ void validateMissionConfig()
       CFG.storageRack.columnXTolerance <= 0 ||
       CFG.storageRack.scanColumnStepMm <= 0.0 ||
       CFG.storageRack.scanColumnMoveMmPerSec <= 0 ||
+      CFG.storageRack.scanSettleMs > 2000 ||
       CFG.storageRack.scanFramesPerStop == 0 ||
       CFG.finishReturn.preAlignSl <= 0 ||
       CFG.finishReturn.preAlignTolerance <= 0 ||
@@ -1839,8 +1840,11 @@ bool scanCurrentStorageColumnForTarget(uint8_t sourceSlot,
   DEBUG_SERIAL.print(requiredColumn);
   DEBUG_SERIAL.print(F(", frames="));
   DEBUG_SERIAL.print(frames);
+  DEBUG_SERIAL.print(F(", settleMs="));
+  DEBUG_SERIAL.print(CFG.storageRack.scanSettleMs);
   DEBUG_SERIAL.print(F(", minArea="));
   DEBUG_SERIAL.println(CFG.storageRack.scanMinBlockArea);
+  delay(CFG.storageRack.scanSettleMs);
 
   int8_t bestIndex = -1;
   uint8_t bestRegion = 0;
@@ -2092,8 +2096,11 @@ bool surveyCurrentStorageColumn(StorageDetection detections[],
   DEBUG_SERIAL.print(column);
   DEBUG_SERIAL.print(F(", frames="));
   DEBUG_SERIAL.print(frames);
+  DEBUG_SERIAL.print(F(", settleMs="));
+  DEBUG_SERIAL.print(CFG.storageRack.scanSettleMs);
   DEBUG_SERIAL.print(F(", minArea="));
   DEBUG_SERIAL.println(CFG.storageRack.scanMinBlockArea);
+  delay(CFG.storageRack.scanSettleMs);
 
   for (uint8_t frame = 0; frame < frames; frame++)
   {
