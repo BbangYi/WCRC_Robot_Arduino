@@ -48,11 +48,9 @@ public:
     int16_t missionTolerance = 5;
 
     // Storage rack scan position for column 1. SR is intentionally ignored.
-    // Approach opens the left side first, then final alignment uses SL first
-    // and FL/FR front depth after that.
-    int16_t alignFl = 246;
-    int16_t alignSl = 305;
-    int16_t alignFr = 221;
+    int16_t alignFl = 266;
+    int16_t alignSl = 354;
+    int16_t alignFr = 269;
     int16_t alignTolerance = 8;
 
     // Upper-row grip depth position. FL/FR are used for front-depth control.

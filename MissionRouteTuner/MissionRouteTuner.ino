@@ -4608,7 +4608,7 @@ bool commandMissionAlignTuning(const String &input) {
     printMissionAlignStatus();
     DEBUG_SERIAL.println(F("사용법: mission align <targetSl> <targetFl> <targetFr> [tolerance]"));
     DEBUG_SERIAL.println(F("       mission align current [tolerance]"));
-    DEBUG_SERIAL.println(F("예시: mission align 305 246 221 8"));
+    DEBUG_SERIAL.println(F("예시: mission align 354 266 269 8"));
     DEBUG_SERIAL.println(F("Side-right PSD는 출력만 보고, 적재함 정렬 제어에는 사용하지 않습니다."));
     return true;
   }
