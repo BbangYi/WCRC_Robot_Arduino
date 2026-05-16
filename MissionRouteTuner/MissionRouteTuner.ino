@@ -177,6 +177,9 @@ int16_t missionLowerGripAlignTolerance = CFG.psd.lowerGripAlignTolerance;
 int16_t missionPlaceSl = CFG.psd.missionZoneSl;
 int16_t missionPlaceFr = CFG.psd.missionZoneFr;
 int16_t missionPlaceTolerance = CFG.psd.missionZoneTolerance;
+int16_t missionFinishPreAlignSl = CFG.finishReturn.preAlignSl;
+int16_t missionFinishPreAlignTolerance = CFG.finishReturn.preAlignTolerance;
+int32_t missionFinishPreAlignSpeed = CFG.finishReturn.preAlignSpeed;
 float missionUpperGripDepthMm = CFG.storageGripTarget.upperExtraForwardMm;
 float missionLowerGripDepthMm = CFG.storageGripTarget.lowerExtraForwardMm;
 int32_t missionGripDepthMmPerSec = CFG.storageGripTarget.extraForwardMmPerSec;
@@ -440,6 +443,9 @@ void resetTunerCalibrationToDefaults() {
   missionPlaceSl = CFG.psd.missionZoneSl;
   missionPlaceFr = CFG.psd.missionZoneFr;
   missionPlaceTolerance = CFG.psd.missionZoneTolerance;
+  missionFinishPreAlignSl = CFG.finishReturn.preAlignSl;
+  missionFinishPreAlignTolerance = CFG.finishReturn.preAlignTolerance;
+  missionFinishPreAlignSpeed = CFG.finishReturn.preAlignSpeed;
   missionUpperGripDepthMm = CFG.storageGripTarget.upperExtraForwardMm;
   missionLowerGripDepthMm = CFG.storageGripTarget.lowerExtraForwardMm;
   missionGripDepthMmPerSec = CFG.storageGripTarget.extraForwardMmPerSec;
@@ -1611,6 +1617,10 @@ void printJsonPsdSnapshot(const PsdSnapshot &snapshot) {
   DEBUG_SERIAL.print(missionPlaceFr);
   DEBUG_SERIAL.print(F(",\"placeTolerance\":"));
   DEBUG_SERIAL.print(missionPlaceTolerance);
+  DEBUG_SERIAL.print(F(",\"finishPreAlignSl\":"));
+  DEBUG_SERIAL.print(missionFinishPreAlignSl);
+  DEBUG_SERIAL.print(F(",\"finishPreAlignTolerance\":"));
+  DEBUG_SERIAL.print(missionFinishPreAlignTolerance);
   DEBUG_SERIAL.print(F(",\"sideRightUsedForAlign\":false}}"));
 }
 
@@ -1946,6 +1956,10 @@ void printJsonTunerConfig() {
   DEBUG_SERIAL.print(CFG.psd.missionZoneFr);
   DEBUG_SERIAL.print(F(",\"missionZoneTolerance\":"));
   DEBUG_SERIAL.print(CFG.psd.missionZoneTolerance);
+  DEBUG_SERIAL.print(F(",\"finishPreAlignSl\":"));
+  DEBUG_SERIAL.print(CFG.finishReturn.preAlignSl);
+  DEBUG_SERIAL.print(F(",\"finishPreAlignTolerance\":"));
+  DEBUG_SERIAL.print(CFG.finishReturn.preAlignTolerance);
   DEBUG_SERIAL.print(F(",\"scanSl\":"));
   DEBUG_SERIAL.print(CFG.psd.scanSl);
   DEBUG_SERIAL.print(F(",\"scanSlTolerance\":"));
@@ -2110,6 +2124,12 @@ void printJsonTunerConfig() {
 
   DEBUG_SERIAL.print(F("},\"finishReturn\":{\"boundaryAdc\":"));
   DEBUG_SERIAL.print(CFG.finishReturn.boundaryAdc);
+  DEBUG_SERIAL.print(F(",\"preAlignSl\":"));
+  DEBUG_SERIAL.print(CFG.finishReturn.preAlignSl);
+  DEBUG_SERIAL.print(F(",\"preAlignTolerance\":"));
+  DEBUG_SERIAL.print(CFG.finishReturn.preAlignTolerance);
+  DEBUG_SERIAL.print(F(",\"preAlignSpeed\":"));
+  DEBUG_SERIAL.print(CFG.finishReturn.preAlignSpeed);
   DEBUG_SERIAL.print(F(",\"trackSl\":"));
   DEBUG_SERIAL.print(CFG.finishReturn.trackSl);
   DEBUG_SERIAL.print(F(",\"trackTolerance\":"));
@@ -6037,6 +6057,138 @@ bool commandMissionMoveToPlaceAlign() {
   return interruptibleDelay(CFG.wait.driveSettleMs);
 }
 
+void printMissionFinishAlignStatus() {
+  DEBUG_SERIAL.print(F("[mission finishalign] preAlign SL="));
+  DEBUG_SERIAL.print(missionFinishPreAlignSl);
+  DEBUG_SERIAL.print(F(", tolerance="));
+  DEBUG_SERIAL.print(missionFinishPreAlignTolerance);
+  DEBUG_SERIAL.print(F(", speed="));
+  DEBUG_SERIAL.println(missionFinishPreAlignSpeed);
+  DEBUG_SERIAL.print(F("{\"type\":\"mission-finishalign\",\"sl\":"));
+  DEBUG_SERIAL.print(missionFinishPreAlignSl);
+  DEBUG_SERIAL.print(F(",\"tolerance\":"));
+  DEBUG_SERIAL.print(missionFinishPreAlignTolerance);
+  DEBUG_SERIAL.print(F(",\"speed\":"));
+  DEBUG_SERIAL.print(missionFinishPreAlignSpeed);
+  DEBUG_SERIAL.println(F(",\"sideRightUsed\":false}"));
+}
+
+bool commandMissionMoveToFinishPreAlign() {
+  if (!ensureMobileReady()) return false;
+
+  DEBUG_SERIAL.println(F("[mission finishalign] 후진 전 미션수행존 SL 기준 위치로 보정"));
+  DEBUG_SERIAL.print(F("  target SL/tol/speed="));
+  DEBUG_SERIAL.print(missionFinishPreAlignSl);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.print(missionFinishPreAlignTolerance);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.println(missionFinishPreAlignSpeed);
+
+  ChangeMobilebaseMode2VelocityControlMode(dxl);
+  int16_t slVal = 0;
+  unsigned long startedAt = millis();
+  while (true) {
+    if (checkEmergencyStopInput()) {
+      stopAll(F("[긴급정지] ! 입력"));
+      return false;
+    }
+    readSideLeftPSDSensor(&slVal);
+    if (!DriveWithOneSensor(dxl,
+                            slVal - missionFinishPreAlignSl,
+                            missionFinishPreAlignTolerance,
+                            DRIVE_DIRECTION_LEFT,
+                            missionFinishPreAlignSpeed)) {
+      break;
+    }
+    if (millis() - startedAt > CFG.timeout.psdLoopMs) {
+      DEBUG_SERIAL.println(F("  finish 시작 SL 보정 타임아웃"));
+      break;
+    }
+    delay(10);
+  }
+  stopMobilebase();
+  DEBUG_SERIAL.print(F("  finish 시작 SL 보정 종료 SL="));
+  DEBUG_SERIAL.println(slVal);
+  clearMissionUndoCandidate();
+  interruptibleDelay(CFG.wait.driveSettleMs);
+  return abs(slVal - missionFinishPreAlignSl) <= missionFinishPreAlignTolerance;
+}
+
+bool commandMissionFinishAlignTuning(const String &input) {
+  String mode = tokenAt(input, 2);
+  mode.toLowerCase();
+  if (mode == "run" || mode == "go" || mode == "move" || mode == "실행" || mode == "이동") {
+    return commandMissionMoveToFinishPreAlign();
+  }
+  if (mode == "current" || mode == "now" || mode == "현재") {
+    long tolerance = missionFinishPreAlignTolerance;
+    long speed = missionFinishPreAlignSpeed;
+    if (tokenCount(input) >= 4 &&
+        !parseLongStrict(tokenAt(input, 3), &tolerance)) {
+      DEBUG_SERIAL.println(F("사용법: mission finishalign current [tolerance] [speed]"));
+      return false;
+    }
+    if (tokenCount(input) >= 5 &&
+        !parseLongStrict(tokenAt(input, 4), &speed)) {
+      DEBUG_SERIAL.println(F("사용법: mission finishalign current [tolerance] [speed]"));
+      return false;
+    }
+    if (tolerance < 1 || tolerance > 80 || speed < 1 || speed > profile().maxMissionVelocityRaw) {
+      DEBUG_SERIAL.println(F("[제한] tolerance는 1~80, speed는 현재 profile 속도 한도 안에서 지정하세요."));
+      return false;
+    }
+    int16_t slVal = 0;
+    readSideLeftPSDSensor(&slVal);
+    missionFinishPreAlignSl = slVal;
+    missionFinishPreAlignTolerance = (int16_t)tolerance;
+    missionFinishPreAlignSpeed = (int32_t)speed;
+    DEBUG_SERIAL.println(F("[mission finishalign] 현재 SL 값을 finish 시작 기준으로 적용했습니다."));
+    printMissionFinishAlignStatus();
+    printPsdStatus();
+    return true;
+  }
+
+  if (tokenCount(input) < 3) {
+    printMissionFinishAlignStatus();
+    DEBUG_SERIAL.println(F("사용법: mission finishalign <targetSl> [tolerance] [speed]"));
+    DEBUG_SERIAL.println(F("       mission finishalign current [tolerance] [speed]"));
+    DEBUG_SERIAL.println(F("       mission finishalign run"));
+    DEBUG_SERIAL.println(F("예시: mission finishalign 570 20 80"));
+    DEBUG_SERIAL.println(F("finish 후진 직전에 SL만 먼저 맞춥니다. 배치용 placealign과 별도 기준입니다."));
+    return true;
+  }
+
+  long targetSl = 0;
+  long tolerance = missionFinishPreAlignTolerance;
+  long speed = missionFinishPreAlignSpeed;
+  if (!parseLongStrict(tokenAt(input, 2), &targetSl)) {
+    DEBUG_SERIAL.println(F("사용법: mission finishalign <targetSl> [tolerance] [speed]"));
+    return false;
+  }
+  if (tokenCount(input) >= 4 &&
+      !parseLongStrict(tokenAt(input, 3), &tolerance)) {
+    DEBUG_SERIAL.println(F("사용법: mission finishalign <targetSl> [tolerance] [speed]"));
+    return false;
+  }
+  if (tokenCount(input) >= 5 &&
+      !parseLongStrict(tokenAt(input, 4), &speed)) {
+    DEBUG_SERIAL.println(F("사용법: mission finishalign <targetSl> [tolerance] [speed]"));
+    return false;
+  }
+  if (targetSl < 1 || targetSl > 1023 ||
+      tolerance < 1 || tolerance > 80 ||
+      speed < 1 || speed > profile().maxMissionVelocityRaw) {
+    DEBUG_SERIAL.println(F("[제한] targetSl은 1~1023, tolerance는 1~80, speed는 현재 profile 속도 한도 안에서 지정하세요."));
+    return false;
+  }
+
+  missionFinishPreAlignSl = (int16_t)targetSl;
+  missionFinishPreAlignTolerance = (int16_t)tolerance;
+  missionFinishPreAlignSpeed = (int32_t)speed;
+  printMissionFinishAlignStatus();
+  return true;
+}
+
 bool commandMissionMoveToZoneAndPlace(uint8_t slot) {
   DEBUG_SERIAL.print(F("[mission move] 미션수행존 "));
   DEBUG_SERIAL.print(slot);
@@ -6156,12 +6308,18 @@ bool runFinishReturnPhase(const __FlashStringHelper *label, bool waitForBoundary
 bool commandMissionFinish() {
   if (!ensureMobileReady()) return false;
 
-  DEBUG_SERIAL.println(F("[mission finish] 현재 위치 기준 후진 finish 실행"));
-  DEBUG_SERIAL.println(F("  적재함 재정렬 없이, Motor.ino의 finish 후진 보정과 같은 기준을 사용합니다."));
+  DEBUG_SERIAL.println(F("[mission finish] finish 시작 SL 보정 후 후진 finish 실행"));
+  DEBUG_SERIAL.println(F("  적재함 재정렬 없이, SL을 미션수행존 finish 시작 기준에 맞춘 뒤 후진합니다."));
   DEBUG_SERIAL.print(F("{\"type\":\"mission-finish\",\"returnSpeed\":"));
   DEBUG_SERIAL.print(CFG.speed.returnSpeed);
   DEBUG_SERIAL.print(F(",\"boundaryAdc\":"));
   DEBUG_SERIAL.print(CFG.finishReturn.boundaryAdc);
+  DEBUG_SERIAL.print(F(",\"preAlignSl\":"));
+  DEBUG_SERIAL.print(missionFinishPreAlignSl);
+  DEBUG_SERIAL.print(F(",\"preAlignTolerance\":"));
+  DEBUG_SERIAL.print(missionFinishPreAlignTolerance);
+  DEBUG_SERIAL.print(F(",\"preAlignSpeed\":"));
+  DEBUG_SERIAL.print(missionFinishPreAlignSpeed);
   DEBUG_SERIAL.print(F(",\"trackSl\":"));
   DEBUG_SERIAL.print(CFG.finishReturn.trackSl);
   DEBUG_SERIAL.print(F(",\"finishExtraMs\":"));
@@ -6173,6 +6331,10 @@ bool commandMissionFinish() {
   pixy.setLamp(0, 0);
   clearMissionUndoCandidate();
   ChangeMobilebaseMode2VelocityControlMode(dxl);
+  if (!commandMissionMoveToFinishPreAlign()) {
+    if (checkEmergencyStopInput()) return false;
+    DEBUG_SERIAL.println(F("  [주의] finish 시작 SL 보정이 목표 범위 밖에서 끝났습니다. 현재 위치 기준으로 후진을 계속합니다."));
+  }
 
   if (!runFinishReturnPhase(F("  [finish-1] SL 장애물 없어질 때까지 후진"),
                             false, CFG.timeout.returnPhaseMs)) return false;
@@ -7457,8 +7619,8 @@ void printMissionPrompt() {
   } else if (missionStage == MISSION_REALIGN_OR_NEXT) {
     DEBUG_SERIAL.println(F("  SW1 실행: 다음 블록이 있으면 적재함 기준 위치로 복귀, 없으면 finish 준비 상태로 전환"));
   } else if (missionStage == MISSION_FINISH) {
-    DEBUG_SERIAL.println(F("  SW1 실행: 현재 위치 기준 후진 finish"));
-    DEBUG_SERIAL.println(F("  보조 명령: mission finish"));
+    DEBUG_SERIAL.println(F("  SW1 실행: finishalign으로 SL 보정 후 후진 finish"));
+    DEBUG_SERIAL.println(F("  보조 명령: mission finish, mission finishalign <sl> [tol] [speed]"));
   } else if (missionStage == MISSION_FINISHED) {
     DEBUG_SERIAL.println(F("  완료 상태입니다. 다시 하려면 mission start"));
   }
@@ -7903,6 +8065,12 @@ bool commandMission(const String &input) {
     printMissionPrompt();
     return ok;
   }
+  if (sub == "finishalign" || sub == "returnalign" || sub == "finishsl" ||
+      sub == "복귀정렬" || sub == "후진정렬") {
+    bool ok = commandMissionFinishAlignTuning(input);
+    printMissionPrompt();
+    return ok;
+  }
   if (sub == "columnright" || sub == "colright" || sub == "rightcol" ||
       sub == "열오른쪽" || sub == "열우") {
     long steps = 1;
@@ -8006,7 +8174,7 @@ bool commandMission(const String &input) {
     return true;
   }
 
-  DEBUG_SERIAL.println(F("사용법: mission start [quick]|run storage|next|rescan|accept|survey|plan|column <1~4>|columnpsd|columnstep <mm> <mm/s>|columnscan|align|gripalign|placealign|undo|finish|reset"));
+  DEBUG_SERIAL.println(F("사용법: mission start [quick]|run storage|next|rescan|accept|survey|plan|column <1~4>|columnpsd|columnstep <mm> <mm/s>|columnscan|align|gripalign|placealign|finishalign|undo|finish|reset"));
   DEBUG_SERIAL.println(F("보조: mission button on/off|auto|upper|lower|slot <1~8>|block next|goto <stage>"));
   return false;
 }
@@ -8029,6 +8197,12 @@ void commandStatus() {
   DEBUG_SERIAL.print(F(" raw, position="));
   DEBUG_SERIAL.print(missionMotion.positionMoveMmPerSec);
   DEBUG_SERIAL.println(F("mm/s"));
+  DEBUG_SERIAL.print(F("  finish pre-align SL/tol/speed: "));
+  DEBUG_SERIAL.print(missionFinishPreAlignSl);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.print(missionFinishPreAlignTolerance);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.println(missionFinishPreAlignSpeed);
   DEBUG_SERIAL.print(F("  wheel velocity trim FL/FR/BL/BR: "));
   DEBUG_SERIAL.print(missionWheelVelocityTrimFl, 3);
   DEBUG_SERIAL.print(F("/"));
@@ -8098,6 +8272,10 @@ void printPsdSnapshotLine(const PsdSnapshot &snapshot, const __FlashStringHelper
   DEBUG_SERIAL.print(missionPlaceFr);
   DEBUG_SERIAL.print(F(" tol="));
   DEBUG_SERIAL.print(missionPlaceTolerance);
+  DEBUG_SERIAL.print(F(" finishSL="));
+  DEBUG_SERIAL.print(missionFinishPreAlignSl);
+  DEBUG_SERIAL.print(F(" tol="));
+  DEBUG_SERIAL.print(missionFinishPreAlignTolerance);
   DEBUG_SERIAL.println(F(" (SR ignored)"));
 }
 
@@ -8853,7 +9031,7 @@ void commandHelpMain() {
   DEBUG_SERIAL.println(F("  mission columnpsd [c] [n] [ms]: 열별 PSD 평균 JSON 출력"));
   DEBUG_SERIAL.println(F("  mission columnscan            : 현재 열 Pixy 스캔/판정 저장"));
   DEBUG_SERIAL.println(F("  mission undo                  : 가능한 마지막 고정 거리 이동만 반대 실행"));
-  DEBUG_SERIAL.println(F("  mission finish                : 현재 위치에서 후진 finish"));
+  DEBUG_SERIAL.println(F("  mission finish                : finishalign 후 후진 finish"));
   DEBUG_SERIAL.println(F("  psd status|watch [ms]|off     : PSD 네 센서값 확인/토글"));
   DEBUG_SERIAL.println(F("  cal status|save|load          : 튜너 보정값 전용 EEPROM 저장/불러오기"));
   DEBUG_SERIAL.println(F("  status | stop | !"));
@@ -8877,6 +9055,7 @@ void commandHelpAdvanced() {
   DEBUG_SERIAL.println(F("  mission align <sl> <fl> <fr> [tol]: 적재함 스캔 정렬 target 임시 변경"));
   DEBUG_SERIAL.println(F("  mission gripalign upper|lower <fl> <fr> [tol]: 집기 직전 FL/FR 깊이 target 변경"));
   DEBUG_SERIAL.println(F("  mission placealign <sl> <fr> [tol]: 미션수행존 배치 SL+FR target 임시 변경"));
+  DEBUG_SERIAL.println(F("  mission finishalign <sl> [tol] [speed]: finish 후진 전 SL target 변경"));
   DEBUG_SERIAL.println(F("  pose run|plan|diff|tuneplan|tune|apply|save|restore|confirm|cancel"));
   DEBUG_SERIAL.println(F("  seq initial|storage|camera|pick upper|pick lower|place <1~8>|placeall"));
   DEBUG_SERIAL.println(F("  pixy sig|watch|align|sweep|brightness|fps|lamp"));

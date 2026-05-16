@@ -228,6 +228,9 @@ public:
 
   struct FinishReturnConfig
   {
+    int16_t preAlignSl = 570;
+    int16_t preAlignTolerance = 20;
+    int32_t preAlignSpeed = 80;
     int16_t boundaryAdc = 220;
     int16_t trackSl = 317;
     int16_t trackTolerance = 20;

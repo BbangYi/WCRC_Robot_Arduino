@@ -940,6 +940,9 @@ void validateMissionConfig()
       CFG.storageRack.scanColumnStepMm <= 0.0 ||
       CFG.storageRack.scanColumnMoveMmPerSec <= 0 ||
       CFG.storageRack.scanFramesPerStop == 0 ||
+      CFG.finishReturn.preAlignSl <= 0 ||
+      CFG.finishReturn.preAlignTolerance <= 0 ||
+      CFG.finishReturn.preAlignSpeed <= 0 ||
       CFG.finishReturn.trackTolerance <= 0)
   {
     haltWithRedBlink(F("  [설정 오류] tolerance 값 오류"),
@@ -2641,6 +2644,44 @@ void realignToStorage()
   alignStorageScanPosition(F("    적재함 기준 위치 PSD 재정렬: SL 먼저, FL/FR 나중"));
 }
 
+bool alignFinishStartPosition()
+{
+  DEBUG_SERIAL.println(F("  [finish-pre] 후진 전 미션수행존 SL 기준 위치로 보정"));
+  DEBUG_SERIAL.print(F("    target SL/tol/speed="));
+  DEBUG_SERIAL.print(CFG.finishReturn.preAlignSl);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.print(CFG.finishReturn.preAlignTolerance);
+  DEBUG_SERIAL.print(F("/"));
+  DEBUG_SERIAL.println(CFG.finishReturn.preAlignSpeed);
+
+  ChangeMobilebaseMode2VelocityControlMode(dxl);
+  int16_t slVal = 0;
+  unsigned long startedAt = millis();
+  while (1)
+  {
+    GetValueFromSideLeftPSDSensor(&slVal);
+    if (!DriveWithOneSensor(dxl,
+                            slVal - CFG.finishReturn.preAlignSl,
+                            CFG.finishReturn.preAlignTolerance,
+                            DRIVE_DIRECTION_LEFT,
+                            CFG.finishReturn.preAlignSpeed))
+    {
+      break;
+    }
+    if (millis() - startedAt > CFG.timeout.psdLoopMs)
+    {
+      DEBUG_SERIAL.println(F("    finish 시작 SL 보정 타임아웃"));
+      break;
+    }
+    delay(10);
+  }
+  SetMobileGoalVelocityForSyncWrite(dxl, 0, 0, 0, 0);
+  DEBUG_SERIAL.print(F("    finish 시작 SL 보정 종료 SL="));
+  DEBUG_SERIAL.println(slVal);
+  delay(CFG.wait.driveSettleMs);
+  return abs(slVal - CFG.finishReturn.preAlignSl) <= CFG.finishReturn.preAlignTolerance;
+}
+
 // ============================================================
 //  5단계: 적재함 스캔 -> 집기 -> 배치 (핵심 루프)
 // ============================================================
@@ -2812,7 +2853,7 @@ void step5_pickAndPlace()
   if (allDetectedBlocksPlaced)
   {
     DEBUG_SERIAL.println(F("  감지했던 signature 블록을 모두 배치했습니다."));
-    DEBUG_SERIAL.println(F("  적재함으로 재정렬하지 않고 현재 미션수행존 위치에서 바로 복귀 후진을 시작합니다."));
+    DEBUG_SERIAL.println(F("  적재함으로 재정렬하지 않고 finish 시작 SL 보정 후 복귀 후진을 시작합니다."));
   }
   else
   {
@@ -2837,7 +2878,7 @@ void step6_return()
   DEBUG_SERIAL.println(F("========================================"));
   if (allDetectedBlocksPlaced)
   {
-    DEBUG_SERIAL.println(F("  전체 배치 완료 상태: 현재 미션수행존 위치에서 바로 후진 복귀합니다."));
+    DEBUG_SERIAL.println(F("  전체 배치 완료 상태: finish 시작 SL 보정 후 후진 복귀합니다."));
   }
   else
   {
@@ -2856,6 +2897,10 @@ void step6_return()
   DEBUG_SERIAL.println(F("  카메라 램프 OFF"));
 
   ChangeMobilebaseMode2VelocityControlMode(dxl);
+  if (!alignFinishStartPosition())
+  {
+    DEBUG_SERIAL.println(F("  [주의] finish 시작 SL 보정이 목표 범위 밖에서 끝났습니다. 현재 위치 기준으로 후진을 계속합니다."));
+  }
 
   int16_t slVal;
   unsigned long t0;
