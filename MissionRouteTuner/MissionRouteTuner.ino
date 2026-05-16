@@ -142,7 +142,7 @@ uint8_t missionColumnScanFrames = CFG.storageRack.scanFramesPerStop;
 uint16_t missionColumnScanSampleMs = CFG.wait.scanSampleMs;
 int16_t missionFrontFirstDetectAdc = CFG.front.firstDetectAdc;
 int16_t missionFrontDecelWindowAdc = CFG.front.decelWindowAdc;
-float missionFrontAfterDetectMm = 0.0;
+float missionFrontAfterDetectMm = 15.0;
 int32_t missionFrontAfterDetectMmPerSec = 80;
 int16_t missionInstructionSl = CFG.psd.missionSl;
 uint16_t missionInstructionFinalForwardMs = DEFAULT_INSTRUCTION_FINAL_FORWARD_MS;
@@ -415,7 +415,7 @@ void resetTunerCalibrationToDefaults() {
   missionColumnScanSampleMs = CFG.wait.scanSampleMs;
   missionFrontFirstDetectAdc = CFG.front.firstDetectAdc;
   missionFrontDecelWindowAdc = CFG.front.decelWindowAdc;
-  missionFrontAfterDetectMm = 0.0;
+  missionFrontAfterDetectMm = 15.0;
   missionFrontAfterDetectMmPerSec = 80;
   missionInstructionSl = CFG.psd.missionSl;
   missionInstructionFinalForwardMs = DEFAULT_INSTRUCTION_FINAL_FORWARD_MS;
@@ -4690,8 +4690,8 @@ bool commandMissionApproachTuning(const String &input) {
   if (tokenCount(input) < 4) {
     printMissionApproachStatus();
     DEBUG_SERIAL.println(F("사용법: mission approach <afterDetectMm> <continueRaw> [firstDetectAdc] [decelWindowAdc]"));
-    DEBUG_SERIAL.println(F("Motor 기준 기본값: mission approach 0 80"));
-    DEBUG_SERIAL.println(F("센서값은 맞고 선만 덜 밟는 실험 때만 afterDetectMm를 5~10씩 올려 테스트하세요."));
+    DEBUG_SERIAL.println(F("Tuner 기본값: mission approach 15 80"));
+    DEBUG_SERIAL.println(F("첫 감지 후 장애물에 붙는 연속 전진입니다. 너무 멀리 가면 5~10mm로 낮추세요."));
     return true;
   }
 
@@ -9042,7 +9042,7 @@ void commandGuideRace() {
   DEBUG_SERIAL.println();
   DEBUG_SERIAL.println(F("미션 흐름을 한 단계씩 돌며 확인하려면:"));
   DEBUG_SERIAL.println(F("mission start"));
-  DEBUG_SERIAL.println(F("mission approach 0 80   # Motor 기준: 첫 감지 후 추가 전진 없음"));
+  DEBUG_SERIAL.println(F("mission approach 15 80  # 첫 감지 후 장애물에 붙고 SL로 미션지시존 정렬"));
   DEBUG_SERIAL.println(F("mission instruction 640 500 120  # SL 정렬 후 미션지시존에 붙이며 주행 중 Pixy scan"));
   DEBUG_SERIAL.println(F("mission scanrate 500 10  # 미션지시존 signature scan 빠르게"));
   DEBUG_SERIAL.println(F("mission scanrate 200 10  # 거의 멈추지 않는 빠른 후보"));
