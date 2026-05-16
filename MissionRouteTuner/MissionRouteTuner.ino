@@ -70,6 +70,7 @@ const int32_t DEFAULT_INSTRUCTION_FINAL_FORWARD_RAW = 120;
 #define RECEIVE_BUFFER_SIZE 120
 char receiveBuffer[RECEIVE_BUFFER_SIZE] = {0,};
 uint8_t receiveBufferIdx = 0;
+bool serialInputDiscardedDuringBusy = false;
 
 bool manipulatorReady = false;
 bool mobileReady = false;
@@ -753,6 +754,8 @@ bool checkEmergencyStopInput() {
     char c = DEBUG_SERIAL.read();
     if (c == '!') {
       emergency = true;
+    } else {
+      serialInputDiscardedDuringBusy = true;
     }
   }
   return emergency;
@@ -9629,6 +9632,15 @@ void resetReceiveBuffer() {
   flushDebugSerialData();
 }
 
+void discardInputTypedDuringBusyIfNeeded() {
+  if (!serialInputDiscardedDuringBusy) return;
+  serialInputDiscardedDuringBusy = false;
+  clearReceiveBuffer();
+  flushDebugSerialData();
+  DEBUG_SERIAL.println(F("[입력 무시] 동작 중 들어온 일반 명령은 버렸습니다. '>' 표시 후 다시 입력하세요."));
+  DEBUG_SERIAL.println(F("            동작 중 즉시 정지는 ! 만 사용합니다."));
+}
+
 void handleMissionButtonMode() {
   if (!missionButtonMode) return;
 
@@ -9646,6 +9658,7 @@ void handleMissionButtonMode() {
   DEBUG_SERIAL.println();
   DEBUG_SERIAL.println(F("[mission button] SW1 -> mission step"));
   commandMissionNext();
+  discardInputTypedDuringBusyIfNeeded();
   DEBUG_SERIAL.print(F("> "));
 
   while (digitalRead(SW1_PIN) == LOW) {
@@ -9718,6 +9731,7 @@ void loop() {
       clearReceiveBuffer();
       input.trim();
       handleCommand(input, true);
+      discardInputTypedDuringBusyIfNeeded();
       DEBUG_SERIAL.print(F("> "));
       return;
     }
